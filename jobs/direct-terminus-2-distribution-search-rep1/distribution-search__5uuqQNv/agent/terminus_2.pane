@@ -1,0 +1,110 @@
+[?2004hroot@474233794de0:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@474233794de0:/app# clear
+[?2004l[H[J[3J[?2004hroot@474233794de0:/app# cat > /app/create_distribution.py <<'PY'
+[?2004lould not find a grouped distribution satisfying the constraints")
+
+p = solution
+arr = np.concatenate([
+    np.full(int(counts[0]), p[0]),
+    np.full(int(counts[1]), p[1]),
+    np.full(int(counts[2]), p[2]),
+])
+
+# Renormalize only for floating-point summation, then verify the actual saved array.
+arr /= arr.sum()
+forward = float(np.sum(arr * np.log(arr * N)))
+backward = float(np.sum((1.0 / N) * np.log((1.0 / N) / arr)))
+
+if arr.shape != (N,) or not np.all(np.isfinite(arr)) or np.any(arr <= 0):
+    raise RuntimeError("Invalid probability array")
+if abs(arr.sum() - 1.0) > 1e-12:
+    raise RuntimeError("Distribution does not sum to one")
+if abs(forward - target) > 0.001 or abs(backward - target) > 0.001:
+    raise RuntimeError(f"KL verification failed: forward={forward}, backward={backward}")
+
+np.save("/app/dist.npy", arr)
+print(f"saved /app/dist.npy, shape={arr.shape}, sum={arr.sum():.17g}")
+print(f"forward KL={forward:.12f}")
+print(f"backward KL={backward:.12f}")
+print(f"min={arr.min():.17g}, max={arr.max():.17g}")
+PY
+python3 /app/create_distribution.py
+python3 - <<'PY'
+import numpy as np
+x = np.load('/app/dist.npy')
+print('file exists:', x.shape, x.dtype, 'sum:', x.sum())
+PY
+[?2004h> import numpy as np
+[?2004l[?2004h> from scipy.optimize import root
+[?2004l[?2004h> 
+[?2004l[?2004h> N = 150_000
+[?2004l[?2004h> counts = np.array([1, 1000, N - 1001], dtype=np.float64)
+[?2004l[?2004h> target = 10.0
+[?2004l[?2004h> 
+[?2004l[?2004h> # Variables are log probabilities per item in each group.
+[?2004l[?2004h> def equations(logp):
+[?2004l[?2004h>     p = np.exp(logp)
+[?2004l[?2004h>     norm = np.dot(counts, p)
+[?2004l[?2004h>     forward = np.dot(counts * p, np.log(p * N))
+[?2004l[?2004h>     backward = np.dot(counts / N, np.log(1.0 / (N * p)))
+[?2004l[?2004h>     return np.array([norm - 1.0, forward - target, backward - target])
+[?2004l[?2004h> 
+[?2004l[?2004h> # Multiple starts make the numerical construction robust.
+[?2004l[?2004h> starts = [
+[?2004l[?2004h>     np.log([0.8, 1.9e-4, 1.3e-6]),
+[?2004l[?2004h>     np.log([0.9, 9.0e-5, 6.7e-7]),
+[?2004l[?2004h>     np.log([0.5, 4.0e-4, 3.3e-6]),
+[?2004l[?2004h>     np.log([0.99, 1.0e-5, 6.7e-8]),
+[?2004l[?2004h> ]
+[?2004l[?2004h> 
+[?2004l[?2004h> solution = None
+[?2004l[?2004h> for start in starts:
+[?2004l[?2004h>     result = root(equations, start, method="lm")
+[?2004l[?2004h>     if result.success and np.max(np.abs(equations(result.x))) < 1e-8:
+[?2004l[?2004h>         p = np.exp(result.x)
+[?2004l[?2004h>         if np.all(np.isfinite(p)) and np.all(p > 0):
+[?2004l[?2004h>             solution = p
+[?2004l[?2004h>             break
+[?2004l[?2004h> 
+[?2004l[?2004h> if solution is None:
+[?2004l[?2004h>     raise RuntimeError("Could not find a grouped distribution satisfying the constraints")
+[?2004l[?2004h> 
+[?2004l[?2004h> p = solution
+[?2004l[?2004h> arr = np.concatenate([
+[?2004l[?2004h>     np.full(int(counts[0]), p[0]),
+[?2004l[?2004h>     np.full(int(counts[1]), p[1]),
+[?2004l[?2004h>     np.full(int(counts[2]), p[2]),
+[?2004l[?2004h> ])
+[?2004l[?2004h> 
+[?2004l[?2004h> # Renormalize only for floating-point summation, then verify the actual saved array.
+[?2004l[?2004h> arr /= arr.sum()
+[?2004l[?2004h> forward = float(np.sum(arr * np.log(arr * N)))
+[?2004l[?2004h> backward = float(np.sum((1.0 / N) * np.log((1.0 / N) / arr)))
+[?2004l[?2004h> 
+[?2004l[?2004h> if arr.shape != (N,) or not np.all(np.isfinite(arr)) or np.any(arr <= 0):
+[?2004l[?2004h>     raise RuntimeError("Invalid probability array")
+[?2004l[?2004h> if abs(arr.sum() - 1.0) > 1e-12:
+[?2004l[?2004h>     raise RuntimeError("Distribution does not sum to one")
+[?2004l[?2004h> if abs(forward - target) > 0.001 or abs(backward - target) > 0.001:
+[?2004l[?2004h>     raise RuntimeError(f"KL verification failed: forward={forward}, backward={backward}")
+[?2004l[?2004h> 
+[?2004l[?2004h> np.save("/app/dist.npy", arr)
+[?2004l[?2004h> print(f"saved /app/dist.npy, shape={arr.shape}, sum={arr.sum():.17g}")
+[?2004l[?2004h> print(f"forward KL={forward:.12f}")
+[?2004l[?2004h> print(f"backward KL={backward:.12f}")
+[?2004l[?2004h> print(f"min={arr.min():.17g}, max={arr.max():.17g}")
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@474233794de0:/app# python3 /app/create_distribution.py
+[?2004lsaved /app/dist.npy, shape=(150000,), sum=0.99999999999999989
+forward KL=10.000000000000
+backward KL=10.000000000000
+min=2.7655262025834012e-10, max=0.79567192048369939
+[?2004hroot@474233794de0:/app# python3 - <<'PY'
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> x = np.load('/app/dist.npy')
+[?2004l[?2004h> print('file exists:', x.shape, x.dtype, 'sum:', x.sum())
+[?2004l[?2004h> PY
+[?2004lfile exists: (150000,) float64 sum: 0.9999999999999999
+[?2004hroot@474233794de0:/app# 

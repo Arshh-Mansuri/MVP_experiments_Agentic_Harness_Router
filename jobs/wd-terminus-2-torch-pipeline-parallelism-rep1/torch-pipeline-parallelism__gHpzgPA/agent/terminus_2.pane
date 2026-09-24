@@ -1,0 +1,170 @@
+[?2004hroot@38309ff24269:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@38309ff24269:/app# clear
+[?2004l[H[J[3J[?2004hroot@38309ff24269:/app# pwd; ls -la; python3 - <<'PY'
+[?2004l[?2004h> import torch
+[?2004l[?2004h> print('torch', torch.__version__, 'dist', torch.distributed.is_available())
+[?2004l[?2004h> try:
+[?2004l[?2004h>  import transformers
+[?2004l[?2004h>  print('transformers', transformers.__version__)
+[?2004l[?2004h>  from transformers import LlamaForCausalLM
+[?2004l[?2004h>  import inspect
+[?2004l[?2004h>  print(inspect.signature(LlamaForCausalLM.forward))
+[?2004l[?2004h> except Exception as e: print(type(e).__name__, e)
+[?2004l[?2004h> PY
+[?2004l/app
+total 8
+drwxr-xr-x 2 root root 4096 Oct 22  2025 [0m[01;34m.[0m
+drwxr-xr-x 1 root root 4096 Sep 19 10:42 [01;34m..[0m
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+ModuleNotFoundError: No module named 'torch'
+[?2004hroot@38309ff24269:/app# cat > /app/pipeline_parallel.py <<'PY'
+[?2004l[?2004h> """AFAB pipeline-parallel training step for Hugging Face LLaMA models."""
+[?2004l[?2004h> 
+[?2004l[?2004h> import torch
+[?2004l[?2004h> import torch.distributed as dist
+[?2004l[?2004h> import torch.nn.functional as F
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def _layer_forward(layer, hidden_states, position_ids):
+[?2004l[?2004h>     """Call a LLaMA decoder layer across common Transformers versions."""
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         result = layer(hidden_states, position_ids=position_ids)
+[?2004l[?2004h>     except TypeError:
+[?2004l[?2004h>         result = layer(hidden_states)
+[?2004l[?2004h>     if isinstance(result, (tuple, list)):
+[?2004l[?2004h>         return result[0]
+[?2004l[?2004h>     return result
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def train_step_pipeline_afab(model, inputs, targets, device, dtype):
+[?2004l[?2004h>     """Run one all-forward/all-backward pipeline-parallel training step.
+[?2004l[?2004h> 
+[?2004l[?2004h>     ``inputs`` and ``targets`` are lists of microbatches.  The model is
+[?2004l[?2004h>     replicated on each process, but only the process' contiguous layer range
+[?2004l_output = torch.empty_like(output, device=device, dtype=dtype)
+   [?2004h>     is executed.  Gradients remain attached to the original model parameters.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     if not dist.is_available() or not dist.is_initialized():
+[?2004l[?2004h>         raise RuntimeError("the distributed process group must be initialized")
+[?2004l    [?2004h> 
+[?2004l[?2004h>     rank = dist.get_rank()
+[?2004l[?2004h>     world_size = dist.get_world_size()
+[?2004l[?2004h>     if len(inputs) != len(targets):
+[?2004le stage produced no input gradient")
+            dist.send(
+               [?2004h>         raise ValueError("inputs and targets must contain the same microbatches")
+[?2004l[?2004h>     if not inputs:
+[?2004l[?2004h>         raise ValueError("at least one microbatch is required")
+[?2004l[?2004h> 
+[?2004l[?2004h>     n_microbatches = len(inputs)
+[?2004l[?2004h>     llama = model.model
+[?2004l[?2004h>     layers = llama.layers
+[?2004l[?2004h>     n_layers = len(layers)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Proportional boundaries give every rank either floor or ceil(n/world)
+[?2004l[?2004h>     # layers and also work when the number of ranks exceeds the layer count.
+[?2004l[?2004h>     first_layer = (rank * n_layers) // world_size
+[?2004l[?2004h>     last_layer = ((rank + 1) * n_layers) // world_size
+[?2004l[?2004h>     local_layers = layers[first_layer:last_layer]
+[?2004l[?2004h>     is_first = rank == 0
+[?2004l[?2004h>     is_last = rank == world_size - 1
+[?2004l[?2004h> 
+[?2004l[?2004h>     hidden_size = getattr(model.config, "hidden_size", None)
+[?2004l[?2004h>     if hidden_size is None:
+[?2004l[?2004h>         hidden_size = llama.embed_tokens.embedding_dim
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Tags are unique per direction and microbatch.  Keeping one send and one
+[?2004l[?2004h>     # receive in pipeline order avoids requiring a global barrier.
+[?2004l[?2004h>     fwd_tag = lambda mb: mb
+[?2004l[?2004h>     bwd_tag = lambda mb: n_microbatches + mb
+[?2004l[?2004h> 
+[?2004l[?2004h>     saved_inputs = []
+[?2004l[?2004h>     saved_outputs = []
+[?2004l[?2004h>     losses = []
+[?2004l[?2004h> 
+[?2004l[?2004h>     # ---------------------------- all forward ----------------------------
+[?2004l[?2004h>     for mb, input_ids in enumerate(inputs):
+[?2004l[?2004h>         input_ids = input_ids.to(device=device)
+[?2004l[?2004h>         shape = tuple(input_ids.shape)
+[?2004l[?2004h>         if len(shape) != 2:
+[?2004l[?2004h>             raise ValueError("each input microbatch must have shape [batch, seq]")
+[?2004l[?2004h>         batch_size, seq_len = shape
+[?2004l[?2004h> 
+[?2004l[?2004h>         if is_first:
+[?2004l[?2004h>             hidden = llama.embed_tokens(input_ids)
+[?2004l[?2004h>             hidden = hidden.to(device=device, dtype=dtype)
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             # Every rank has the microbatch metadata in normal pipeline use.
+[?2004l[?2004h>             # Targets provide a fallback for callers that only populate inputs
+[?2004l[?2004h>             # on rank zero.
+[?2004l[?2004h>             if len(input_ids.shape) == 2:
+[?2004l[?2004h>                 recv_batch, recv_seq = input_ids.shape
+[?2004l[?2004h>             else:
+[?2004l[?2004h>                 recv_batch, recv_seq = targets[mb].shape
+[?2004l[?2004h>             hidden = torch.empty(
+[?2004l[?2004h>                 (recv_batch, recv_seq, hidden_size), device=device, dtype=dtype
+[?2004l[?2004h>             )
+[?2004l[?2004h>             dist.recv(hidden, src=rank - 1, tag=fwd_tag(mb))
+[?2004l[?2004h>             hidden.requires_grad_(True)
+[?2004l[?2004h> 
+[?2004l[?2004h>         hidden = hidden.to(device=device, dtype=dtype)
+[?2004l[?2004h>         hidden.retain_grad()
+[?2004l[?2004h>         stage_input = hidden
+[?2004l[?2004h> 
+[?2004l[?2004h>         position_ids = torch.arange(seq_len, device=device, dtype=torch.long)
+[?2004l[?2004h>         position_ids = position_ids.unsqueeze(0).expand(batch_size, -1)
+[?2004l[?2004h>         for layer in local_layers:
+[?2004l[?2004h>             hidden = _layer_forward(layer, hidden, position_ids)
+[?2004l[?2004h>             hidden = hidden.to(device=device, dtype=dtype)
+[?2004l[?2004h> 
+[?2004l[?2004h>         saved_inputs.append(stage_input)
+[?2004l[?2004h>         saved_outputs.append(hidden)
+[?2004l[?2004h> 
+[?2004l[?2004h>         if is_last:
+[?2004l[?2004h>             hidden_for_head = llama.norm(hidden)
+[?2004l[?2004h>             hidden_for_head = hidden_for_head.to(device=device, dtype=dtype)
+[?2004l[?2004h>             logits = model.lm_head(hidden_for_head)
+[?2004l[?2004h>             labels = targets[mb].to(device=device)
+[?2004l[?2004h>             # Match Hugging Face causal-LM loss: token t predicts token t+1.
+[?2004l[?2004h>             shift_logits = logits[..., :-1, :].contiguous()
+[?2004l[?2004h>             shift_labels = labels[..., 1:].contiguous()
+[?2004l[?2004h>             loss = F.cross_entropy(
+[?2004l[?2004h>                 shift_logits.view(-1, shift_logits.size(-1)),
+[?2004l[?2004h>                 shift_labels.view(-1),
+[?2004l[?2004h>             ) / n_microbatches
+[?2004l[?2004h>             losses.append(loss)
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             dist.send(hidden.detach().contiguous(), dst=rank + 1, tag=fwd_tag(mb))
+[?2004l[?2004h> 
+[?2004l[?2004h>     # ---------------------------- all backward ----------------------------
+[?2004l[?2004h>     for mb in range(n_microbatches - 1, -1, -1):
+[?2004l[?2004h>         if is_last:
+[?2004l[?2004h>             losses[mb].backward()
+[?2004l[?2004h>             input_grad = saved_inputs[mb].grad
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             output = saved_outputs[mb]
+[?2004l[?2004h>             grad_output = torch.empty_like(output, device=device, dtype=dtype)
+[?2004l[?2004h>             dist.recv(grad_output, src=rank + 1, tag=bwd_tag(mb))
+[?2004l[?2004h>             output.backward(grad_output)
+[?2004l[?2004h>             input_grad = saved_inputs[mb].grad
+[?2004l[?2004h> 
+[?2004l[?2004h>         if not is_first:
+[?2004l[?2004h>             if input_grad is None:
+[?2004l[?2004h>                 raise RuntimeError("pipeline stage produced no input gradient")
+[?2004l[?2004h>             dist.send(
+[?2004l[?2004h>                 input_grad.to(device=device, dtype=dtype).contiguous(),
+[?2004l[?2004h>                 dst=rank - 1,
+[?2004l[?2004h>                 tag=bwd_tag(mb),
+[?2004l[?2004h>             )
+[?2004l[?2004h> 
+[?2004l[?2004h>     if is_last:
+[?2004l[?2004h>         return torch.stack(losses).sum().detach()
+[?2004l[?2004h>     return None
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@38309ff24269:/app# python3 -m py_compile /app/pipeline_parallel.py
+[?2004l[?2004hroot@38309ff24269:/app# ls -l /app/pipeline_parallel.py
+[?2004l-rw-r--r-- 1 root root 5440 Sep 19 10:43 /app/pipeline_parallel.py
+[?2004hroot@38309ff24269:/app# 

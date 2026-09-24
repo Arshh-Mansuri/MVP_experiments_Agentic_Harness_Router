@@ -1,0 +1,333 @@
+[?2004hroot@d407e61b5f4c:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@d407e61b5f4c:/app# clear
+[?2004l[H[J[3J[?2004hroot@d407e61b5f4c:/app# ls -l /data/source_a/users.json /data/source_b/users.csv /data/source_c/users.parquet && printf '\nJSON sample:\n' && head -c 1000 /data/source_a/users.json && printf '\nCSV sample:\n' && head -5 /data/source_b/users.csv && printf '\nParquet metadata:\n' && python3 - <<'PY'
+[?2004l[?2004h> try:
+[?2004l[?2004h>  import pandas as pd
+[?2004l[?2004h>  print('pandas', pd.__version__)
+[?2004l[?2004h> except Exception as e: print('pandas unavailable:', e)
+[?2004l[?2004h> try:
+[?2004l[?2004h>  import pyarrow as pa
+[?2004l[?2004h>  print('pyarrow', pa.__version__)
+[?2004l[?2004h> except Exception as e: print('pyarrow unavailable:', e)
+[?2004l[?2004h> try:
+[?2004l[?2004h>  import fastparquet
+[?2004l[?2004h>  print('fastparquet', fastparquet.__version__)
+[?2004l[?2004h> except Exception as e: print('fastparquet unavailable:', e)
+[?2004l[?2004h> PY
+[?2004l-rw-r--r-- 1 root root  291 Oct 24  2025 /data/source_a/users.json
+-rw-r--r-- 1 root root  129 Oct 24  2025 /data/source_b/users.csv
+-rw-r--r-- 1 root root 3639 Oct 24  2025 /data/source_c/users.parquet
+
+JSON sample:
+[
+  {
+    "id": 101,
+    "full_name": "John Doe",
+    "email": "john@a.com",
+    "registration_date": "2024-01-15",
+    "status": "active"
+  },
+  {
+    "id": 102,
+    "full_name": "Jane Smith",
+    "email": "jane@a.com",
+    "registration_date": "2024-02-20",
+    "status": "inactive"
+  }
+]
+
+CSV sample:
+user_id,name,email_address,created_at,is_active
+101,John Doe,john@b.com,2024-01-10,true
+103,Bob Wilson,bob@b.com,2024-03-01,true
+
+Parquet metadata:
+pandas 2.2.3
+pyarrow 17.0.0
+fastparquet unavailable: No module named 'fastparquet'
+[?2004hroot@d407e61b5f4c:/app# python3 - <<'PY'
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> p='/data/source_c/users.parquet'
+[?2004l[?2004h> df=pd.read_parquet(p)
+[?2004l[?2004h> print(df.to_string(index=False))
+[?2004l[?2004h> print('\ncolumns:', list(df.columns))
+[?2004l[?2004h> print('\ndtypes:\n', df.dtypes)
+[?2004l[?2004h> PY
+[?2004lcat > /app/merge_users.py <<'PY'
+import json
+from datetime import date, datetime
+from pathlib import Path
+
+import pandas as pd
+
+SOURCES = [
+    ('source_a', '/data/source_a/users.json'),
+    ('source_b', '/data/source_b/users.csv'),
+    ('source_c', '/data/source_c/users.parquet'),
+]
+PRIORITY = ['source_a', 'source_b', 'source_c']
+FIELDS = ['name', 'email', 'created_date', 'status']
+ALIASES = {
+    'user_id': ['user_id', 'id', 'userId'],
+    'name': ['name', 'full_name', 'userName'],
+    'email': ['email', 'email_address'],
+    'created_date': ['created_date', 'registration_date', 'created_at', 'joined'],
+    'status': ['status'],
+}
+
+def read_source(name, path):
+    if name == 'source_a':
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+        df = pd.DataFrame(data)
+    elif name == 'source_b':
+        df = pd.read_csv(path, dtype=str)
+    else:
+        df = pd.read_parquet(path)
+    out = pd.DataFrame()
+    for target, aliases in ALIASES.items():
+        found = next((col for col in aliases if col in df.columns), None)
+        out[target] = df[found] if found else pd.NA
+    out['user_id'] = pd.to_numeric(out['user_id'], errors='raise').astype('int64')
+    # Normalize all values before comparison and output.
+    for col in ['name', 'email', 'status']:
+        out[col] = out[col].map(lambda x: None if pd.isna(x) else str(x).strip())
+        out[col] = out[col].map(lambda x: None if x == '' else x)
+    def norm_date(x):
+        if pd.isna(x) or str(x).strip() == '':
+            return None
+        if isinstance(x, (pd.Timestamp, datetime, date)):
+            return x.strftime('%Y-%m-%d')
+        return pd.to_datetime(str(x).strip(), errors='raise').strftime('%Y-%m-%d')
+    out['created_date'] = out['created_date'].map(norm_date)
+    # If a source accidentally contains duplicate IDs, retain its first record.
+    return out.drop_duplicates('user_id', keep='first').set_index('user_id')
+
+def present(v):
+    return v is not None and not pd.isna(v)
+
+frames = {name: read_source(name, path) for name, path in SOURCES}
+all_ids = sorted(set().union(*(set(df.index.tolist()) for df in frames.values())))
+merged = []
+conflicts = []
+for uid in all_ids:
+    row = {'user_id': int(uid)}
+    for field in FIELDS:
+        vals = {}
+        for source in PRIORITY:
+            df = frames[source]
+            if uid in df.index:
+                value = df.at[uid, field]
+                if present(value):
+                    vals[source] = value
+        distinct = list(dict.fromkeys(vals.values()))
+        selected = next((vals[s] for s in PRIORITY if s in vals), None)
+        row[field] = selected
+        if len(distinct) > 1:
+            conflicts.append({
+                'user_id': int(uid),
+                'field': field,
+                'values': {s: vals[s] for s in PRIORITY if s in vals},
+                'selected': selected,
+            })
+    merged.append(row)
+
+result = pd.DataFrame(merged, columns=['user_id', 'name', 'email', 'created_date', 'status'])
+result['user_id'] = result['user_id'].astype('int64')
+for col in ['name', 'email', 'created_date', 'status']:
+    result[col] = result[col].where(result[col].notna(), None).astype(object)
+result.to_parquet('/app/merged_users.parquet', engine='pyarrow', index=False)
+with open('/app/conflicts.json', 'w', encoding='utf-8') as f:
+    json.dump({'total_conflicts': len(conflicts), 'conflicts': conflicts}, f, indent=2, ensure_ascii=False)
+print(f'Wrote {len(result)} users and {len(conflicts)} conflicts')
+print(result.to_string(index=False))
+PY
+python3 /app/merge_users.py
+ userId    userName       email     joined  active
+    101     John D.  john@c.com 2024-01-20    True
+    104 Alice Brown alice@c.com 2024-04-01    True
+
+columns: ['userId', 'userName', 'email', 'joined', 'active']
+
+dtypes:
+ userId       int64
+userName    object
+email       object
+joined      object
+active        bool
+dtype: object
+[?2004hroot@d407e61b5f4c:/app# cat > /app/merge_users.py <<'PY'
+[?2004l[?2004h> import json
+[?2004l[?2004h> from datetime import date, datetime
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> 
+[?2004l[?2004h> SOURCES = [
+[?2004l[?2004h>     ('source_a', '/data/source_a/users.json'),
+[?2004l[?2004h>     ('source_b', '/data/source_b/users.csv'),
+[?2004l[?2004h>     ('source_c', '/data/source_c/users.parquet'),
+[?2004l[?2004h> ]
+[?2004l[?2004h> PRIORITY = ['source_a', 'source_b', 'source_c']
+[?2004l[?2004h> FIELDS = ['name', 'email', 'created_date', 'status']
+[?2004l[?2004h> ALIASES = {
+[?2004l[?2004h>     'user_id': ['user_id', 'id', 'userId'],
+[?2004l[?2004h>     'name': ['name', 'full_name', 'userName'],
+[?2004l[?2004h>     'email': ['email', 'email_address'],
+[?2004l[?2004h>     'created_date': ['created_date', 'registration_date', 'created_at', 'joined'],
+[?2004l[?2004h>     'status': ['status'],
+[?2004l[?2004h> }
+[?2004l[?2004h> 
+[?2004l[?2004h> def read_source(name, path):
+[?2004l[?2004h>     if name == 'source_a':
+[?2004l[?2004h>         with open(path, encoding='utf-8') as f:
+[?2004l[?2004h>             data = json.load(f)
+[?2004l[?2004h>         df = pd.DataFrame(data)
+[?2004l[?2004h>     elif name == 'source_b':
+[?2004l[?2004h>         df = pd.read_csv(path, dtype=str)
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         df = pd.read_parquet(path)
+[?2004l[?2004h>     out = pd.DataFrame()
+[?2004l[?2004h>     for target, aliases in ALIASES.items():
+[?2004l[?2004h>         found = next((col for col in aliases if col in df.columns), None)
+[?2004l[?2004h>         out[target] = df[found] if found else pd.NA
+[?2004l[?2004h>     out['user_id'] = pd.to_numeric(out['user_id'], errors='raise').astype('int64')
+[?2004l[?2004h>     # Normalize all values before comparison and output.
+[?2004l[?2004h>     for col in ['name', 'email', 'status']:
+[?2004l[?2004h>         out[col] = out[col].map(lambda x: None if pd.isna(x) else str(x).strip())
+[?2004l[?2004h>         out[col] = out[col].map(lambda x: None if x == '' else x)
+[?2004l[?2004h>     def norm_date(x):
+[?2004l[?2004h>         if pd.isna(x) or str(x).strip() == '':
+[?2004l[?2004h>             return None
+[?2004l[?2004h>         if isinstance(x, (pd.Timestamp, datetime, date)):
+[?2004l[?2004h>             return x.strftime('%Y-%m-%d')
+[?2004l[?2004h>         return pd.to_datetime(str(x).strip(), errors='raise').strftime('%Y-%m-%d')
+[?2004l[?2004h>     out['created_date'] = out['created_date'].map(norm_date)
+[?2004l[?2004h>     # If a source accidentally contains duplicate IDs, retain its first record.
+[?2004l[?2004h>     return out.drop_duplicates('user_id', keep='first').set_index('user_id')
+[?2004l[?2004h> 
+[?2004l[?2004h> def present(v):
+[?2004l[?2004h>     return v is not None and not pd.isna(v)
+[?2004l[?2004h> 
+[?2004l[?2004h> frames = {name: read_source(name, path) for name, path in SOURCES}
+[?2004l[?2004h> all_ids = sorted(set().union(*(set(df.index.tolist()) for df in frames.values())))
+[?2004l[?2004h> merged = []
+[?2004l[?2004h> conflicts = []
+[?2004l[?2004h> for uid in all_ids:
+[?2004l[?2004h>     row = {'user_id': int(uid)}
+[?2004l[?2004h>     for field in FIELDS:
+[?2004l[?2004h>         vals = {}
+[?2004l[?2004h>         for source in PRIORITY:
+[?2004l[?2004h>             df = frames[source]
+[?2004l[?2004h>             if uid in df.index:
+[?2004l[?2004h>                 value = df.at[uid, field]
+[?2004l[?2004h>                 if present(value):
+[?2004l[?2004h>                     vals[source] = value
+[?2004l[?2004h>         distinct = list(dict.fromkeys(vals.values()))
+[?2004l[?2004h>         selected = next((vals[s] for s in PRIORITY if s in vals), None)
+[?2004l[?2004h>         row[field] = selected
+[?2004l[?2004h>         if len(distinct) > 1:
+[?2004l[?2004h>             conflicts.append({
+[?2004l[?2004h>                 'user_id': int(uid),
+[?2004l[?2004h>                 'field': field,
+[?2004l[?2004h>                 'values': {s: vals[s] for s in PRIORITY if s in vals},
+[?2004l[?2004h>                 'selected': selected,
+[?2004l[?2004h>             })
+[?2004l[?2004h>     merged.append(row)
+[?2004l[?2004h> 
+[?2004l[?2004h> result = pd.DataFrame(merged, columns=['user_id', 'name', 'email', 'created_date', 'status'])
+[?2004l[?2004h> result['user_id'] = result['user_id'].astype('int64')
+[?2004l[?2004h> for col in ['name', 'email', 'created_date', 'status']:
+[?2004l[?2004h>     result[col] = result[col].where(result[col].notna(), None).astype(object)
+[?2004l[?2004h> result.to_parquet('/app/merged_users.parquet', engine='pyarrow', index=False)
+[?2004l[?2004h> with open('/app/conflicts.json', 'w', encoding='utf-8') as f:
+[?2004l[?2004h>     json.dump({'total_conflicts': len(conflicts), 'conflicts': conflicts}, f, indent=2, ensure_ascii=False)
+[?2004l[?2004h> print(f'Wrote {len(result)} users and {len(conflicts)} conflicts')
+[?2004l[?2004h> print(result.to_string(index=False))
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@d407e61b5f4c:/app# python3 /app/merge_users.py
+[?2004lpython3 - <<'PY'
+import json, os
+import pandas as pd
+p='/app/merged_users.parquet'
+c='/app/conflicts.json'
+df=pd.read_parquet(p)
+with open(c) as f: report=json.load(f)
+print('output files:', os.path.getsize(p), os.path.getsize(c), 'bytes')
+print('columns:', list(df.columns))
+print('dtypes:', {k:str(v) for k,v in df.dtypes.items()})
+print('rows:', len(df), 'conflicts:', report['total_conflicts'], 'listed:', len(report['conflicts']))
+assert df['user_id'].dtype == 'int64'
+assert report['total_conflicts'] == len(report['conflicts'])
+assert len(df) == df['user_id'].nunique()
+assert all((x is None or len(str(x)) == 10) for x in df['created_date'])
+print('validation: OK')
+print(json.dumps(report, indent=2))
+PY
+Wrote 4 users and 3 conflicts
+ user_id        name       email created_date   status
+     101    John Doe  john@a.com   2024-01-15   active
+     102  Jane Smith  jane@a.com   2024-02-20 inactive
+     103  Bob Wilson   bob@b.com   2024-03-01     None
+     104 Alice Brown alice@c.com   2024-04-01     None
+[?2004hroot@d407e61b5f4c:/app# python3 - <<'PY'
+[?2004l[?2004h> import json, os
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> p='/app/merged_users.parquet'
+[?2004l[?2004h> c='/app/conflicts.json'
+[?2004l[?2004h> df=pd.read_parquet(p)
+[?2004l[?2004h> with open(c) as f: report=json.load(f)
+[?2004l[?2004h> print('output files:', os.path.getsize(p), os.path.getsize(c), 'bytes')
+[?2004l[?2004h> print('columns:', list(df.columns))
+[?2004l[?2004h> print('dtypes:', {k:str(v) for k,v in df.dtypes.items()})
+[?2004l[?2004h> print('rows:', len(df), 'conflicts:', report['total_conflicts'], 'listed:', len(report['conflicts']))
+[?2004l[?2004h> assert df['user_id'].dtype == 'int64'
+[?2004l[?2004h> assert report['total_conflicts'] == len(report['conflicts'])
+[?2004l[?2004h> assert len(df) == df['user_id'].nunique()
+[?2004l[?2004h> assert all((x is None or len(str(x)) == 10) for x in df['created_date'])
+[?2004l[?2004h> print('validation: OK')
+[?2004l[?2004h> print(json.dumps(report, indent=2))
+[?2004l[?2004h> PY
+[?2004loutput files: 3780 698 bytes
+columns: ['user_id', 'name', 'email', 'created_date', 'status']
+dtypes: {'user_id': 'int64', 'name': 'object', 'email': 'object', 'created_date': 'object', 'status': 'object'}
+rows: 4 conflicts: 3 listed: 3
+validation: OK
+{
+  "total_conflicts": 3,
+  "conflicts": [
+    {
+      "user_id": 101,
+      "field": "name",
+      "values": {
+        "source_a": "John Doe",
+        "source_b": "John Doe",
+        "source_c": "John D."
+      },
+      "selected": "John Doe"
+    },
+    {
+      "user_id": 101,
+      "field": "email",
+      "values": {
+        "source_a": "john@a.com",
+        "source_b": "john@b.com",
+        "source_c": "john@c.com"
+      },
+      "selected": "john@a.com"
+    },
+    {
+      "user_id": 101,
+      "field": "created_date",
+      "values": {
+        "source_a": "2024-01-15",
+        "source_b": "2024-01-10",
+        "source_c": "2024-01-20"
+      },
+      "selected": "2024-01-15"
+    }
+  ]
+}
+[?2004hroot@d407e61b5f4c:/app# 

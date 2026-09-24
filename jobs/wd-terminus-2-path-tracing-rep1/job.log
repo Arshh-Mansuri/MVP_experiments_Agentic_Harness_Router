@@ -1,0 +1,341 @@
+Installing: tmux, asciinema
+Detected system: {'os': 'debian-based', 'package_manager': 'apt-get', 'update_command': None}
+Installing tools using apt-get: DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tmux asciinema
+Starting recording.
+Sending keys: ['asciinema rec --stdin /logs/agent/recording.cast', 'Enter'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['clear', 'Enter'] min_timeout_sec: 0.0 max_timeout_sec: 180.0
+Parser warnings: - Extra text detected after JSON object
+Sending keys: ["pwd; file image.ppm; head -3 image.ppm; wc -c image.ppm; python3 - <<'PY'\nfrom PIL import Image\nim=Image.open('image.ppm'); print(im.size,im.mode); print('colors',len(im.getcolors(maxcolors=10000000))); print(im.getcolors(maxcolors=20))\nPY\n"] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\nfrom collections import Counter\np='image.ppm'\nwith open(p,'rb') as f:\n    tok=[]\n    while len(tok)<3:\n        s=f.readline()\n        if not s: break\n        if s.startswith(b'#'): continue\n        tok += s.split()\n    w,h,m=map(int,tok[:3]); print('SIZE',w,h,'MAX',m)\n    c=Counter(); rows=[]; vals=[]\n    for y in range(h):\n        row=[]\n        while len(row)<3*w:\n            s=f.readline()\n            if not s: break\n            if s.startswith(b'#'): continue\n            row += list(map(int,s.split()))\n        c.update(zip(row[0::3],row[1::3],row[2::3]))\n        if y%(h//30)==0:\n            # 80 horizontal blocks, average RGB\n            for x in range(80):\n                a=(x*w)//80; b=((x+1)*w)//80\n                q=row[3*a:3*b]\n                if q:\n                    n=len(q)//3; r=sum(q[0::3])/n; g=sum(q[1::3])/n; bl=sum(q[2::3])/n\n                    lum=(r+g+bl)/3\n                    rowc=' .:-=+*#%@'[min(9,int(lum*10/256))]\n                    row.append(0)\n                    vals.append((y,x,rowc,r,g,bl))\n    print('COLORS',len(c),'TOP',c.most_common(20))\n    for y in range(0,h,h//30):\n        print(''.join(v[2] for v in vals if v[0]==y))\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\nfrom collections import Counter\nf=open('image.ppm','rb'); t=[]\nwhile len(t)<4:\n s=f.readline()\n if not s: break\n if s.startswith(b'#'): continue\n t += s.split()\nassert t[0]==b'P3'\nw,h,m=map(int,t[1:4]); print('SIZE',w,h,'MAX',m)\nc=Counter(); thumb=[]\nchars=' .:-=+*#%@'\nfor y in range(h):\n a=[]\n while len(a)<3*w:\n  s=f.readline()\n  if not s: break\n  if not s.startswith(b'#'): a += map(int,s.split())\n a=list(a); c.update(zip(a[0::3],a[1::3],a[2::3]))\n if y%(h//30)==0:\n  out=''\n  for x in range(80):\n   l=(x*w)//80; r=((x+1)*w)//80; n=r-l\n   R=sum(a[3*l:3*r:3])/n; G=sum(a[3*l+1:3*r:3])/n; B=sum(a[3*l+2:3*r:3])/n\n   z=(R+G+B)/3\n   if z<35: ch=' '\n   elif R>G*1.35 and R>B*1.25: ch='R'\n   elif G>R*1.25 and G>B*1.15: ch='G'\n   elif B>R*1.25 and B>G*1.15: ch='B'\n   elif z>220: ch='@'\n   else: ch=chars[min(9,int(z*10/256))]\n   out+=ch\n  thumb.append(out)\nprint('UNIQUE COLORS',len(c)); print('TOP COLORS',c.most_common(30)); print('\\n'.join(thumb))\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Parser warnings: - Extra text detected after JSON object
+Sending keys: ["python3 - <<'PY'\nfrom collections import Counter\nf=open('image.ppm','rb'); t=[]\nwhile len(t)<4:\n s=f.readline()\n if s.startswith(b'#'): continue\n t+=s.split()\nw,h,m=map(int,t[1:4]); a=[]\nfor s in f:\n if not s.startswith(b'#'): a+=map(int,s.split())\np=list(zip(a[0::3],a[1::3],a[2::3])); print(w,h,len(p))\n# dominant colors per broad row bands\nfor y in range(0,h,100):\n c=Counter(p[y*w:(y+100)*w]); print(y,c.most_common(5))\n# 100x45 map, classify by RGB properties / brightness\nfor yy in range(45):\n y=min(h-1,(yy*h)//45); out=''\n for xx in range(100):\n  x=min(w-1,(xx*w)//100); r,g,b=p[y*w+x]; z=(r+g+b)//3\n  if r>g*1.5 and r>b*1.5: q='R'\n  elif r<35 and g<35 and b<35:q='@'\n  elif abs(r-g)<3 and abs(g-b)<3:\n   q=' .'[z>80] if z<130 else ('+' if z<180 else '#')\n  elif b>r+35:q='S'\n  elif z<80:q='d'\n  else:q='o'\n  out+=q\n print(out)\n# red bounds and per-row bounds\nfor y in range(h):\n xs=[x for x in range(w) if (lambda c:c[0]>c[1]*1.5 and c[0]>c[2]*1.5)(p[y*w+x])]\n if xs and (y%20==0 or y<1000): print('RED',y,min(xs),max(xs),len(xs))\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['cat > image.c <<\'EOF\'\n#include <stdio.h>\n#include <math.h>\n#define W 2400\n#define H 1800\nint main(){FILE*f=fopen("reconstructed.ppm","wb");fprintf(f,"P6\\n%d %d\\n255\\n",W,H);for(int y=0;y<H;y++)for(int x=0;x<W;x++){double X=(x+0.5-1200)/1200.,Y=(y+0.5-900)/900.;unsigned char r,g,b;\n/* sky */\n double rr=148+40*(y/900.),gg=191+25*(y/900.);r=rr;g=gg;b=255;\n /* perspective ground: camera rays meet plane at z=1/(Y), with a mild wide-angle correction */\n if(y>=900){double z=2.35/(Y), q=X*z;int ix=(int)floor(q),iz=(int)floor(z);int ck=(ix+iz)&1;r=g=b=ck?152:67;\n  /* soft dark cast shadow behind the sphere */\n  double sx=q, sz=z-1.0, sh=exp(-((sx*sx)/.7+(sz*sz)/.9));\n  if(sh>.02){double v=1-.72*sh;r*=v;g*=v;b*=v;}\n }\n /* sphere, projected almost circular and sitting on the plane */\n double dx=(x-1200)/1.0,dy=(y-985)/1.0, rr2=dx*dx+dy*dy;\n if(rr2<184.0*184.0){double zz=sqrt(1-rr2/(184.0*184.0));double lx=-.45,ly=-.65,lz=.62;double nx=dx/184,ny=dy/184,nz=zz;double d=nx*lx+ny*ly+nz*lz;double v=.18+.82*(d>0?d:0);r=51*v;g=10*v;b=10*v;}\n fputc(r,f);fputc(g,f);fputc(b,f);}fclose(f);return 0;}\nEOF\ngcc -static -O2 -o image image.c -lm && ./image\nls -l image.c reconstructed.ppm\n'] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\nimport struct,math\n\ndef read(fn):\n f=open(fn,'rb'); t=[]\n while len(t)<4:\n  s=f.readline()\n  if s.startswith(b'#'):continue\n  t+=s.split()\n w,h,m=map(int,t[1:4]); d=f.read(); return w,h,bytes(d)\na=read('image.ppm');b=read('reconstructed.ppm');print('sizes',a[:2],b[:2],len(a[2]),len(b[2]))\nA,B=a[2],b[2]; ss=se=0\nfor x,y in zip(A,B): ss+=(x-y)*(x-y); se+=x*x\nprint('rmse',math.sqrt(ss/len(A)),'similarity',1-math.sqrt(ss/se))\nfor y in [0,300,600,800,900,950,1000,1100,1200,1500,1700]:\n print(y, [tuple(A[(y*2400+x)*3:(y*2400+x+1)*3]) for x in [0,600,1200,1800,2399]], [tuple(B[(y*2400+x)*3:(y*2400+x+1)*3]) for x in [0,600,1200,1800,2399]])\nPY\nwc -c image.c; gzip -c image.c | wc -c; ls -l reconstructed.ppm\n"] min_timeout_sec: 5.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\nimport math\n\ndef toks(fn):\n with open(fn,'rb') as f:\n  for line in f:\n   if line.startswith(b'#'): continue\n   for z in line.split(): yield z\n\ndef ref():\n g=toks('image.ppm'); assert next(g)==b'P3'; w=int(next(g));h=int(next(g));next(g)\n for z in g: yield int(z)\ng=ref(); f=open('reconstructed.ppm','rb');\nassert f.readline()==b'P6\\n'; w,h=map(int,f.readline().split()); assert f.readline()==b'255\\n'; B=f.read()\nss=se=0;n=0\nsamples={}\nfor i,x in enumerate(g):\n y=B[i]\n d=x-y;ss+=d*d;se+=x*x;n+=1\n if i%3==0 and i//3 in [0,2400*300,2400*600,2400*800,2400*900,2400*1000,2400*1200,2400*1500,2400*1700]: samples[i//3]=(x,y,B[i:i+3])\nprint('pixels',n//3,'rmse',math.sqrt(ss/n),'similarity',1-math.sqrt(ss/se))\nprint(samples)\nPY\ngzip -c image.c | wc -c\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\ndef ts(fn):\n f=open(fn,'rb')\n while 1:\n  s=f.readline()\n  if not s: return\n  if s.startswith(b'#'): continue\n  yield from s.split()\ng=ts('image.ppm'); print([next(g) for _ in range(20)])\n# fresh generator, consume header, then collect decoded RGB\nq=ts('image.ppm'); print('header',[next(q) for _ in range(4)])\nfor k in range(5): print('rgb',k,[int(next(q)) for _ in range(3)])\n# selected pixels\nq=ts('image.ppm'); [next(q) for _ in range(4)]\npts={(0,0),(1200,0),(0,300),(1200,300),(1200,800),(0,900),(600,900),(1200,900),(1200,1000)}\nfor y in range(1800):\n for x in range(2400):\n  c=tuple(int(next(q)) for _ in range(3))\n  if (x,y) in pts: print((x,y),c)\n  if x==2399 and y>=1000 and len(pts)==0: break\n # cannot cheaply stop because iterator order; continue\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\ndef gen():\n f=open('image.ppm','rb')\n while 1:\n  s=f.readline()\n  if not s:return\n  if not s.startswith(b'#'):yield from s.split()\ng=gen(); [next(g) for _ in range(4)]\nW,H=2400,1800\nP=[tuple(int(next(g)) for _ in range(3)) for _ in range(W*H)]\nfor y in [0,100,300,500,700,800,850,880,900,920,1000,1200,1500,1700]:\n print('Y',y,[(x,P[y*W+x]) for x in range(0,W,200)])\nprint('vertical center')\nfor y in range(0,H,50):print(y,P[y*W+1200])\n# runs on selected rows\nfor y in [900,920,1000,1200,1500,1700]:\n r=[];last=P[y*W]; st=0\n for x in range(1,W):\n  if P[y*W+x]!=last:\n   if x-st>20:r.append((st,x-1,last))\n   st=x;last=P[y*W+x]\n if W-st>20:r.append((st,W-1,last))\n print('RUN',y,r[:30])\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['cat > image.c <<\'EOF\'\n#include<stdio.h>\n#include<math.h>\n#define W 2400\n#define H 1800\nint main(){FILE*f=fopen("reconstructed.ppm","wb");fprintf(f,"P6\\n%d %d\\n255\\n",W,H);for(int y=0;y<H;y++)for(int x=0;x<W;x++){double X=(x-1200.)/1200,Y=y/900.,u=X*X*(1-Y)*(1-Y);int r=146+40*Y+13*u,g=190+26*Y+7*u,b=255;double dx=x-1200,dy=y-1000;/* red sphere */\nif(dx*dx/185./185.+dy*dy/195./195.<1){r=51;g=10;b=10;}\nelse if(y>=900){double d=y-900,q=x/(.67*d),z=1300/d-.5;int k=((int)floor(q)+(int)floor(z))&1;r=g=b=k?67:152;/* contact shadow */if(d>190&&d<430){double s=(x-1200)/500.,t=(d-260)/180.;double sh=exp(-s*s-t*t);r*=1-.7*sh;g*=1-.7*sh;b*=1-.7*sh;}}\nfputc(r<0?0:r>255?255:r,f);fputc(g<0?0:g>255?255:g,f);fputc(b<0?0:b>255?255:b,f);}fclose(f);}\nEOF\ngcc -static -O2 -o image image.c -lm && ./image\npython3 - <<\'PY\'\nimport math\ndef ts(fn):\n f=open(fn,\'rb\')\n for s in f:\n  if not s.startswith(b\'#\'):yield from s.split()\ng=ts(\'image.ppm\');[next(g) for _ in range(4)];f=open(\'reconstructed.ppm\',\'rb\');f.readline();f.readline();f.readline();B=f.read();ss=se=0\nfor i,v in enumerate(g):\n d=int(v)-B[i];ss+=d*d;se+=int(v)*int(v)\nprint(\'similarity\',1-math.sqrt(ss/se),\'rmse\',math.sqrt(ss/(2400*1800*3)))\nPY\ngzip -c image.c | wc -c\n'] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 5.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Parser warnings: - Command 1 should end with newline when followed by another command. Otherwise the two commands will be concatenated together on the same line.
+Sending keys: ['C-c'] min_timeout_sec: 0.1 max_timeout_sec: 180.0
+Sending keys: ['python3 -c \'import math\nf=open("image.ppm","rb");t=[]\nfor s in f:\n if not s.startswith(b"#"):t+=s.split()\nA=list(map(int,t[4:]));f=open("reconstructed.ppm","rb");f.readline();f.readline();f.readline();B=f.read();ss=se=0\nfor x,y in zip(A,B):ss+=(x-y)**2;se+=x*x\nprint("similarity",1-math.sqrt(ss/se),"rmse",math.sqrt(ss/len(A)))\'\ngzip -c image.c | wc -c\nls -l image.c reconstructed.ppm\n'] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['python3 -c \'import math\nf=open("image.ppm","rb")\ndef g():\n for s in f:\n  if not s.startswith(b"#"):\n   for z in s.split():yield int(z)\ng=g();next(g);next(g);next(g);next(g);q=open("reconstructed.ppm","rb");q.readline();q.readline();q.readline();B=q.read();ss=se=0\nfor i,x in enumerate(g):\n y=B[i];ss+=(x-y)*(x-y);se+=x*x\nprint("similarity",1-math.sqrt(ss/se),"rmse",math.sqrt(ss/(2400*1800*3)))\'\n'] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\nimport math\n\ndef raw(fn):\n with open(fn,'rb') as f:\n  for s in f:\n   if not s.startswith(b'#'):\n    yield from s.split()\ng=raw('image.ppm')\nnext(g); next(g); next(g); next(g)\nf=open('reconstructed.ppm','rb'); f.readline(); f.readline(); f.readline(); B=f.read()\nss=se=0\nfor i,z in enumerate(g):\n x=int(z); y=B[i]; ss+=(x-y)*(x-y); se+=x*x\nprint('similarity',1-math.sqrt(ss/se),'rmse',math.sqrt(ss/len(B)))\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\np='image.c';s=open(p).read();s=s.replace('double X=(x-1200.)/1200,Y=y/900.,u=X*X*(1-Y)*(1-Y);int r=146+40*Y+13*u,g=190+26*Y+7*u,b=255;','double X=(x-1200.)/1200,Y=y/900.,u=X*X*(1-Y)*(1-Y),v=pow(Y,1.5);int r=146+40*v+13*u,g=190+26*v+7*u,b=255;')\ns=s.replace('if(dx*dx/185./185.+dy*dy/195./195.<1){r=51;g=10;b=10;}','if(dx*dx/185./185.+dy*dy/145./145.<1&&y<1165){r=51;g=10;b=10;}')\na=s.index('/* contact shadow */'); b=s.index('}}\\nfputc',a); s=s[:a]+s[b:]\nopen(p,'w').write(s)\nPY\ngcc -static -O2 -o image image.c -lm && ./image\npython3 - <<'PY'\nimport math\ndef raw(fn):\n for s in open(fn,'rb'):\n  if not s.startswith(b'#'):yield from s.split()\ng=raw('image.ppm');[next(g) for _ in range(4)];f=open('reconstructed.ppm','rb');f.readline();f.readline();f.readline();B=f.read();ss=se=0\nfor i,z in enumerate(g):\n x=int(z);d=x-B[i];ss+=d*d;se+=x*x\nprint(1-math.sqrt(ss/se))\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['cat > image.c <<\'EOF\'\n#include<stdio.h>\n#include<math.h>\n#define W 2400\n#define H 1800\nint main(){FILE*f=fopen("reconstructed.ppm","wb");fprintf(f,"P6\\n%d %d\\n255\\n",W,H);for(int y=0;y<H;y++)for(int x=0;x<W;x++){double X=(x-1200.)/1200,Y=y/900.,u=X*X*(1-Y)*(1-Y),v=pow(Y,1.5);int r=146+40*v+13*u,g=190+26*v+7*u,b=255;double dx=x-1200,dy=y-1000;if(dx*dx/185./185.+dy*dy/145./145.<1&&y<1165){r=51;g=10;b=10;}else if(y>=900){double d=y-900,q=x/(.67*d),z=1300/d-.5;int k=((int)floor(q)+(int)floor(z))&1;r=g=b=k?67:152;}fputc(r>255?255:r,f);fputc(g>255?255:g,f);fputc(b,f);}fclose(f);}\nEOF\ngcc -static -O2 -o image image.c -lm && ./image\nls -l image.c reconstructed.ppm\ngzip -c image.c | wc -c\n'] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['C-c\n'] min_timeout_sec: 0.1 max_timeout_sec: 180.0
+Sending keys: ["echo 'I2luY2x1ZGU8c3RkaW8uaD4KI2luY2x1ZGU8bWF0aC5oPgojZGVmaW5lIFcgMjQwMAojZGVmaW5lIEggMTgwMAppbnQgbWFpbigpe0ZJTEUqZj1mb3Blbigi\ncmVjb25zdHJ1Y3RlZC5wcG0iLCJ3YiIpO2ZwcmludGYoZiwiUDZcbiVkICVkXG4yNTVcbiIsVyxIKTtmb3IoaW50IHk9MDt5PEg7eStzKylmb3IoaW50IHg9MDt4PFc7eCt+Kyl7ZG91YmxlIFg9KHgtMTIwMC4pLzEyMDAuLFk9eS85MDAuLHU9WFgqWigxLVkpKigxLVkpLHY9cG93KFksMS41KTtpbnQg\ncj0xNDYrNDB2KzEzKnUsZz0xOTArMjZ2KzcrdSxiPTI1NTtib29sIG9uPTE7ZG91YmxlIGR4PXgtMTIwMCxkeT15LTEwMDA7aWYoZHgqZHgvMTg1LjAvMTg1LjArZHkqZHkvMTQ1LjAvMTQ1LjA8MSYmeTwxMTY1KXtyPTUxO2c9MTA7Yj0xMDt9ZWxzZSBpZih5Pj05MDApe2RvdWJsZSBkPXktOTAwLHE9eC8oLjY3KmQpLHo9MTMwMC9kLS41O2ludCBrPSgoaW50KWZsb29yKHEpKygiaW50KWZsb29yKHopKSYxO3I9Zz1iPWs/Nj c3OjE1Mjt9ZndwdXQocj4yNTU/MjU1OnIsZik7ZndwdXQoZz4yNTU/MjU1Omc sZik7ZndwdXQoYixmKTt9fGNsb3NlKGYpO30K' | tr -d ' ' | base64 -d > image.c\ngcc -static -O2 -o image image.c -lm && ./image\nls -l image.c reconstructed.ppm\ngzip -c image.c | wc -c\n"] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['cat > image.c <<\'EOF\'\n#include <stdio.h>\n#include <math.h>\n#define W 2400\n#define H 1800\nint main(){\n FILE*f=fopen("reconstructed.ppm","wb");\n fprintf(f,"P6\\n%d %d\\n255\\n",W,H);\n for(int y=0;y<H;y++)for(int x=0;x<W;x++){\n  double X=(x-1200.)/1200.,Y=y/900.,u=X*X*(1-Y)*(1-Y),v=pow(Y,1.5);\n  int r=146+40*v+13*u,g=190+26*v+7*u,b=255;\n  double dx=x-1200,dy=y-990;\n  if(dx*dx/(185.*185.)+dy*dy/(180.*180.)<1&&y<1170)r=51,g=10,b=10;\n  else if(y>=900){double d=y-900,q=x/(.67*d),z=1300/d-.5;int k=((int)floor(q)+(int)floor(z))&1;r=g=b=k?67:152;}\n  fputc(r,f);fputc(g,f);fputc(b,f);\n }\n fclose(f);return 0;\n}\nEOF\ngcc -static -o image image.c -lm && ./image\nls -l image.c reconstructed.ppm\ngzip -c image.c | wc -c\n'] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\nimport math\n\ndef tok():\n for s in open('image.ppm','rb'):\n  if not s.startswith(b'#'): yield from s.split()\ng=tok(); next(g); W=int(next(g)); H=int(next(g)); next(g)\nf=open('reconstructed.ppm','rb'); f.readline(); f.readline(); f.readline(); B=f.read()\nss=se=0; reg=[[0,0,0] for _ in range(3)]\nfor i,z in enumerate(g):\n x=int(z); y=B[i]; d=x-y; ss+=d*d; se+=x*x\n p=i//3; yy=p//W\n k=0 if yy<900 else (2 if ((p%W-1200)**2+(yy-990)**2<200**2) else 1)\n reg[k][0]+=d*d;reg[k][1]+=1;reg[k][2]+=x*x\nprint('similarity',1-math.sqrt(ss/se),'rmse',math.sqrt(ss/len(B)))\nfor z in reg: print('region',math.sqrt(z[0]/(z[1]*3)),'sim',1-math.sqrt(z[0]/z[2]))\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\np='image.c';s=open(p).read();s=s.replace('q=x/(.67*d),z=1300/d-.5','q=(x-1200)/(.667*d),z=1600/d');open(p,'w').write(s)\nPY\ngcc -static -o image image.c -lm && ./image\npython3 - <<'PY'\nimport math\ndef tok():\n for s in open('image.ppm','rb'):\n  if not s.startswith(b'#'):yield from s.split()\ng=tok();next(g);next(g);next(g);next(g);f=open('reconstructed.ppm','rb');f.readline();f.readline();f.readline();B=f.read();ss=se=0\nfor i,z in enumerate(g):\n x=int(z);d=x-B[i];ss+=d*d;se+=x*x\nprint('similarity',1-math.sqrt(ss/se))\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\ndef pix(fn):\n g=[]\n for s in open(fn,'rb'):\n  if not s.startswith(b'#'):g+=s.split()\n for y in range(900,1800):\n  i=(y*2400+1200)*3\n  yield y,tuple(map(int,g[i:i+3]))\nfor fn in ['image.ppm','reconstructed.ppm']:\n print(fn); last=None;st=900\n for y,c in pix(fn):\n  if c!=last:\n   if last is not None and y-st>=3:print(st,y-1,last)\n   st=y;last=c\n print(st,1799,last)\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["gcc -static -o image image.c -lm && ./image\nprintf 'header: '; head -c 20 reconstructed.ppm | od -An -tc\nprintf 'gzip_bytes: '; gzip -c image.c | wc -c\nprintf 'source_bytes: '; wc -c < image.c\nprintf 'output_bytes: '; wc -c < reconstructed.ppm\n"] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\ndef p3rows():\n def g():\n  for s in open('image.ppm','rb'):\n   if not s.startswith(b'#'):yield from s.split()\n q=g();next(q);W=int(next(q));H=int(next(q));next(q)\n for y in range(H):\n  yield [tuple(int(next(q)) for _ in range(3)) for x in range(W)]\ndef runs(row):\n out=[]; st=0; c=row[0]\n for x,v in enumerate(row[1:],1):\n  if v!=c:\n   if x-st>10:out.append((st,x-1,x-st,c))\n   st=x;c=v\n if 2400-st>10:out.append((st,2399,2400-st,c))\n return out\nfor y,row in zip(range(1800),p3rows()):\n if y in (900,920,950,1000,1100,1200,1300,1400,1500,1600,1700):print(y,runs(row)[:18])\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\np='image.c';s=open(p).read().replace('q=(x-1200)/(.667*d),z=1600/d','q=(x-1200)/((2./3)*d),z=1800/d');open(p,'w').write(s)\nPY\ngcc -static -o image image.c -lm && ./image\npython3 - <<'PY'\nimport math\ndef tok():\n for s in open('image.ppm','rb'):\n  if not s.startswith(b'#'): yield from s.split()\ng=tok();next(g);next(g);next(g);next(g)\nf=open('reconstructed.ppm','rb');f.readline();f.readline();f.readline();B=f.read();ss=se=0\nfor i,z in enumerate(g):\n x=int(z);d=x-B[i];ss+=d*d;se+=x*x\nprint('similarity',1-math.sqrt(ss/se),'rmse',math.sqrt(ss/len(B)))\nPY\nprintf 'gzip_bytes ';gzip -c image.c|wc -c\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\np='image.c';s=open(p).read();old='r=g=b=k?67:152;}\\n  fputc(r,f);'\nnew='r=g=b=k?67:152; double L,R; L=R=0; if(y>1100&&y<1450){if(y<1200){L=930-(y-1100)*1.3;R=1470-(y-1100)*.7;}else if(y<1300){L=800-(y-1200)*2.5;R=1400-(y-1200)*2.6;}else{L=550-(y-1300)*.6;R=1140-(y-1300)*2.75;}if(x>L&&x<R)r=g=b=(int)(r*.303);} }\\n  fputc(r,f);'\nassert old in s\nopen(p,'w').write(s.replace(old,new))\nPY\ngcc -static -o image image.c -lm && ./image\npython3 - <<'PY'\nimport math\ndef tok():\n for s in open('image.ppm','rb'):\n  if not s.startswith(b'#'):yield from s.split()\ng=tok();[next(g) for _ in range(4)];f=open('reconstructed.ppm','rb');f.readline();f.readline();f.readline();B=f.read();ss=se=0\nfor i,z in enumerate(g):\n x=int(z);d=x-B[i];ss+=d*d;se+=x*x\nprint('similarity',1-math.sqrt(ss/se),'rmse',math.sqrt(ss/len(B)))\nPY\ngzip -c image.c | wc -c\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\np='image.c';s=open(p).read();a=s.index('double L,R;');b=s.index('} }',a)+3\nnew='double L=0,R=0;if(y>=1165&&y<1200){L=900-(y-1165)*2.31;R=1360-(y-1165)*2.34;}else if(y<1300){L=819-(y-1200)*2.63;R=1278-(y-1200)*1.38;}else if(y<1400){L=556-(y-1300)*.65;R=1140-(y-1300)*2.75;}else if(y<1450){L=491+(y-1400)*3.5;R=865-(y-1400)*2.5;}if(x>L&&x<R)r=g=b=(int)(r*.303);'\ns=s[:a]+new+s[b:];open(p,'w').write(s)\nPY\ngcc -static -o image image.c -lm && ./image\npython3 - <<'PY'\nimport math\ndef tok():\n for s in open('image.ppm','rb'):\n  if not s.startswith(b'#'):yield from s.split()\ng=tok();[next(g) for _ in range(4)];f=open('reconstructed.ppm','rb');f.readline();f.readline();f.readline();B=f.read();ss=se=0\nfor i,z in enumerate(g):\n x=int(z);d=x-B[i];ss+=d*d;se+=x*x\nprint('similarity',1-math.sqrt(ss/se),'rmse',math.sqrt(ss/len(B)))\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['tail -8 image.c\n'] min_timeout_sec: 0.1 max_timeout_sec: 180.0
+Sending keys: ["printf '\\n}\\n' >> image.c\ngcc -static -o image image.c -lm && ./image\nprintf 'gzip_bytes '; gzip -c image.c | wc -c\nls -l reconstructed.ppm\n"] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['nl -ba image.c; od -An -tc reconstructed.ppm\n'] min_timeout_sec: 0.2 max_timeout_sec: 180.0
+Sending keys: ['cat > image.c <<\'EOF\'\n#include<stdio.h>\n#include<math.h>\n#define W 2400\n#define H 1800\nint main(){FILE*f=fopen("reconstructed.ppm","wb");fprintf(f,"P6\\n%d %d\\n255\\n",W,H);for(int y=0;y<H;y++)for(int x=0;x<W;x++){double X=(x-1200.)/1200.,Y=y/900.,u=X*X*(1-Y)*(1-Y),v=pow(Y,1.5);int r=146+40*v+13*u,g=190+26*v+7*u,b=255;double dx=x-1200,dy=y-990;if(dx*dx/(185.*185.)+dy*dy/(180.*180.)<1&&y<1170)r=51,g=10,b=10;else if(y>=900){double d=y-900,q=(x-1200)/((2./3)*d),z=1800/d;int k=((int)floor(q)+(int)floor(z))&1;r=g=b=k?67:152;double L=0,R=0;if(y>=1165&&y<1200){L=900-(y-1165)*2.31;R=1360-(y-1165)*2.34;}else if(y<1300){L=819-(y-1200)*2.63;R=1278-(y-1200)*1.38;}else if(y<1400){L=556-(y-1300)*.65;R=1140-(y-1300)*2.75;}else if(y<1450){L=491+(y-1400)*3.5;R=865-(y-1400)*2.5;}if(x>L&&x<R)r=g=b=(int)(r*.303);}fputc(r,f);fputc(g,f);fputc(b,f);}fclose(f);return 0;}\nEOF\ngcc -static -o image image.c -lm && ./image\nls -l image.c reconstructed.ppm\ngzip -c image.c | wc -c\n'] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\ndef rows():\n def g():\n  for s in open('image.ppm','rb'):\n   if not s.startswith(b'#'):yield from s.split()\n q=g();next(q);W=int(next(q));H=int(next(q));next(q)\n for y in range(H):yield [tuple(int(next(q)) for _ in range(3)) for _ in range(W)]\nfor y,row in zip(range(1800),rows()):\n if y%25 or y<1100:continue\n xs=[x for x,c in enumerate(row) if c in ((20,20,20),(46,46,46))]\n if xs:\n  runs=[];a=xs[0];p=a\n  for x in xs[1:]:\n   if x>p+1:\n    if p-a>8:runs.append((a,p))\n    a=x\n   p=x\n  if p-a>8:runs.append((a,p))\n  print(y,runs)\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\np='image.c';s=open(p).read();a=s.index('double L=0,R=0;');b=s.index('if(x>L&&x<R)',a)\nnew='double L=0,R=0;if(y>=1175&&y<1200){L=925-(y-1175)*4.24;R=1272+(y-1175)*.24;}else if(y<1250){L=819-(y-1200)*3.1;R=1278-(y-1200)*.92;}else if(y<1300){L=664-(y-1250)*2.16;R=1232-(y-1250)*1.84;}else if(y<1350){L=556-(y-1300)*1.32;R=1140-(y-1300)*2.68;}else if(y<1400){L=490+(y-1350)*.02;R=1006-(y-1350)*4.02);'\n# correct the intentional closing typo before insertion\nnew=new.replace('4.02);','4.02;')\ns=s[:a]+new+s[b:];open(p,'w').write(s)\nPY\ngcc -static -o image image.c -lm && ./image\npython3 - <<'PY'\nimport math\ndef tok():\n for s in open('image.ppm','rb'):\n  if not s.startswith(b'#'):yield from s.split()\ng=tok();[next(g) for _ in range(4)];f=open('reconstructed.ppm','rb');f.readline();f.readline();f.readline();B=f.read();ss=se=0\nfor i,z in enumerate(g):\n x=int(z);d=x-B[i];ss+=d*d;se+=x*x\nprint('similarity',1-math.sqrt(ss/se),'rmse',math.sqrt(ss/len(B)))\nPY\ngzip -c image.c | wc -c\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['cat > image.c <<\'EOF\'\n#include<stdio.h>\n#include<math.h>\n#define W 2400\n#define H 1800\nint main(){FILE*f=fopen("reconstructed.ppm","wb");fprintf(f,"P6\\n%d %d\\n255\\n",W,H);for(int y=0;y<H;y++)for(int x=0;x<W;x++){double X=(x-1200.)/1200.,Y=y/900.,u=X*X*(1-Y)*(1-Y),v=pow(Y,1.5);int r=146+40*v+13*u,g=190+26*v+7*u,b=255;double dx=x-1200,dy=y-990;if(dx*dx/(185.*185.)+dy*dy/(180.*180.)<1&&y<1170){r=51;g=10;b=10;}else if(y>=900){double d=y-900,q=(x-1200)/((2./3)*d),z=1800/d;int k=((int)floor(q)+(int)floor(z))&1;r=g=b=k?67:152;double L=0,R=0;if(y>=1175&&y<1200){L=925-(y-1175)*4.24;R=1272+(y-1175)*.24;}else if(y<1250&&y>=1200){L=819-(y-1200)*3.1;R=1278-(y-1200)*.92;}else if(y<1300){L=664-(y-1250)*2.16;R=1232-(y-1250)*1.84;}else if(y<1350){L=556-(y-1300)*1.32;R=1140-(y-1300)*2.68;}else if(y<1400){L=490+(y-1350)*.02;R=1006-(y-1350)*4.02;}if(x>L&&x<R)r=g=b=(int)(r*.303);}fputc(r,f);fputc(g,f);fputc(b,f);}fclose(f);return 0;}\nEOF\ngcc -static -o image image.c -lm && ./image\nls -l image.c reconstructed.ppm\ngzip -c image.c | wc -c\n'] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\nimport math\n\ndef tok():\n for s in open('image.ppm','rb'):\n  if not s.startswith(b'#'):yield from s.split()\ng=tok();next(g);W=int(next(g));H=int(next(g));next(g)\nf=open('reconstructed.ppm','rb');f.readline();f.readline();f.readline();B=f.read()\nS=[[0,0,0] for _ in range(4)]\nfor i,z in enumerate(g):\n a=int(z);b=B[i];d=a-b; pix=i//3; y=pix//W\n if y<900:k=0\n elif a in (20,46):k=3\n elif a==51:k=1\n else:k=2\n S[k][0]+=d*d;S[k][1]+=a*a;S[k][2]+=1\nfor k,(e,n,c) in enumerate(S):print(k,'rmse',math.sqrt(e/(c*3)),'sim',1-math.sqrt(e/n) if n else 0,'pixels',c//3)\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\ndef ref():\n def g():\n  for s in open('image.ppm','rb'):\n   if not s.startswith(b'#'):yield from s.split()\n q=g();next(q);W=int(next(q));H=int(next(q));next(q)\n for _ in range(W*H):yield tuple(int(next(q)) for _ in range(3))\nA=ref(); pts={(y,x) for y in [920,950,1000,1050,1100,1150,1200,1250,1300,1350,1400,1450,1500,1550,1600,1650,1700,1750] for x in [0,600,900,1500,2000]}\nR={}\nfor y in range(1800):\n for x in range(2400):\n  c=next(A)\n  if (y,x) in pts:R[y,x]=c[0]\nf=open('reconstructed.ppm','rb');f.readline();f.readline();f.readline();B=f.read()\nfor y in sorted({p[0] for p in pts}):\n print(y,'ref',[R[y,x] for x in [0,600,900,1500,2000]],'out',[B[(y*2400+x)*3] for x in [0,600,900,1500,2000]])\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["sed -i 's/z=1800\\/d/z=2000\\/d/' image.c\ngcc -static -o image image.c -lm && ./image\npython3 - <<'PY'\nimport math\ndef tok():\n for s in open('image.ppm','rb'):\n  if not s.startswith(b'#'):yield from s.split()\ng=tok();[next(g) for _ in range(4)];f=open('reconstructed.ppm','rb');f.readline();f.readline();f.readline();B=f.read();ss=se=0\nfor i,z in enumerate(g):\n x=int(z);d=x-B[i];ss+=d*d;se+=x*x\nprint('similarity',1-math.sqrt(ss/se),'rmse',math.sqrt(ss/len(B)))\nPY\ngzip -c image.c | wc -c\nls -l reconstructed.ppm\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\np='image.c';s=open(p).read();s=s.replace('z=2000/d','z=1800/d');a=s.index('double L=0,R=0;');b=s.index('if(x>L&&x<R)',a)\nnew='double L=0,R=0;if(y>1100&&y<1450){if(y<1200){L=930-(y-1100)*1.3;R=1470-(y-1100)*.7;}else if(y<1300){L=800-(y-1200)*2.5;R=1400-(y-1200)*2.6;}else{L=550-(y-1300)*.6;R=1140-(y-1300)*2.75;}if(x>L&&x<R)r=g=b=(int)(r*.303);}'\ns=s[:a]+new+s[b+len('if(x>L&&x<R)r=g=b=(int)(r*.303);'):]\nopen(p,'w').write(s)\nPY\ngcc -static -o image image.c -lm && ./image\nls -l reconstructed.ppm image.c\ngzip -c image.c | wc -c\n"] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["gcc -static -o image image.c -lm && ./image\nprintf 'gzip_bytes '; gzip -c image.c | wc -c\nprintf 'output_bytes '; wc -c < reconstructed.ppm\n"] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["cp image.c /tmp/image.best.c\nsed -i 's/z=1800\\/d/z=2025\\/d/' image.c\ngcc -static -o image image.c -lm && ./image\npython3 - <<'PY'\nimport math\ndef tok():\n for s in open('image.ppm','rb'):\n  if not s.startswith(b'#'):yield from s.split()\ng=tok();[next(g) for _ in range(4)];f=open('reconstructed.ppm','rb');f.readline();f.readline();f.readline();B=f.read();ss=se=0\nfor i,z in enumerate(g):\n x=int(z);d=x-B[i];ss+=d*d;se+=x*x\nprint('similarity',1-math.sqrt(ss/se))\nPY\n"] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["cp /tmp/image.best.c image.c\ngcc -static -o image image.c -lm && ./image\nprintf 'gzip_bytes '; gzip -c image.c | wc -c\nprintf 'output_bytes '; wc -c < reconstructed.ppm\n"] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ["python3 - <<'PY'\nimport math\nW,H=2400,1800; step=8\n# Decode only a sparse grid from the P3 source while retaining enough data for fitting.\ndef tok():\n for s in open('image.ppm','rb'):\n  if not s.startswith(b'#'): yield from s.split()\ng=tok(); next(g); next(g); next(g); next(g)\nS=[]\nfor y in range(H):\n for x in range(W):\n  r=int(next(g)); gg=int(next(g)); b=int(next(g))\n  if y>=900 and x%step==0 and y%step==0:\n   S.append((x,y,r))\nprint('samples',len(S))\n# Fit parity only outside red/shadow colors, using observed exact checker gray values.\nS=[p for p in S if p[2] in (67,152)]\nbest=[]\nfor A in [0.64+i*.002 for i in range(31)]:\n for C in range(1500,2201,10):\n  for ph in range(4):\n   e=0\n   for x,y,r in S:\n    d=y-900\n    q=math.floor((x-1200)/(A*d))\n    z=math.floor(C/d)+ph\n    v=67 if (int(q)+int(z))&1 else 152\n    e+=(v-r)*(v-r)\n   best.append((e,A,C,ph))\nprint(sorted(best)[:10])\nPY\n"] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Parser warnings: - Command 1 should end with newline when followed by another command. Otherwise the two commands will be concatenated together on the same line.
+Sending keys: ['C-c'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ["printf 'current source gzip bytes: '; gzip -c image.c | wc -c\nprintf 'current output bytes: '; wc -c < reconstructed.ppm\n"] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['cat >/tmp/fit.c <<\'EOF\'\n#include<stdio.h>\n#include<math.h>\nint main(){FILE*f=fopen("image.ppm","r");char s[32];int w,h,m;fscanf(f,"%s%d%d%d",s,&w,&h,&m);long best=1L<<60;int bc=0;for(int C=1000;C<=2600;C++){rewind(f);fscanf(f,"%s%d%d%d",s,&w,&h,&m);long e=0;for(int y=0;y<h;y++)for(int x=0;x<w;x++){int r,g,b;fscanf(f,"%d%d%d",&r,&g,&b);if(y>=900&&x%8==0&&y%8==0&&(r==67||r==152)){int q=(int)floor((x-1200.)/((2./3)*(y-900)));int z=(int)floor(C/(double)(y-900));int v=((q+z)&1)?67:152;e+=(v-r)*(v-r);}}if(e<best){best=e;bc=C;printf("%d %ld\\n",C,e);}}}\nEOF\ngcc -O3 -o /tmp/fit /tmp/fit.c -lm && /tmp/fit\n'] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['C-c\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ['cat >/tmp/fit.c <<\'EOF\'\n#include<stdio.h>\n#include<stdlib.h>\n#include<math.h>\ntypedef struct{short x,y,c;} P;\nint main(){FILE*f=fopen("image.ppm","r");char s[8];int w,h,m;fscanf(f,"%s%d%d%d",s,&w,&h,&m);P*p=malloc(100000*sizeof(P));int n=0;\nfor(int y=0;y<h;y++)for(int x=0;x<w;x++){int r,g,b;fscanf(f,"%d%d%d",&r,&g,&b);if(y>=900&&x%8==0&&y%8==0&&(r==67||r==152)){p[n++]=(P){x,y,r};}}\nfclose(f);long best=1L<<60;int bc=0;for(int C=1000;C<=2600;C++){long e=0;for(int i=0;i<n;i++){int d=p[i].y-900,q=floor((p[i].x-1200.)/((2./3)*d)),z=floor(C/(double)d),v=((q+z)&1)?67:152;e+=(v-p[i].c)*(v-p[i].c);}if(e<best){best=e;bc=C;printf("best C=%d error=%ld\\n",bc,best);}}fprintf(stderr,"FINAL %d %ld samples=%d\\n",bc,best,n);}\nEOF\ngcc -O3 -o /tmp/fit /tmp/fit.c -lm && /tmp/fit\n'] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 15.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Parser warnings: - Extra text detected after JSON object
+Sending keys: ['C-c\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ["printf 'gzip_bytes '; gzip -c image.c | wc -c\nprintf 'output_bytes '; wc -c < reconstructed.ppm\n"] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 5.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['C-c\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['\n'] min_timeout_sec: 0.2 max_timeout_sec: 180.0
+Sending keys: ["printf 'ready\\n'; ls -l image.c reconstructed.ppm\n"] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['C-c\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: ['C-d'] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 15.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Parser warnings: - Extra text detected after JSON object
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/wd-terminus-2-path-tracing-rep1/path-tracing__8P3KaBM/agent/trajectory.json
+Collecting main service artifacts
+Exception AgentTimeoutError is in exclude_exceptions, not retrying
+Not retrying trial because the exception is not in include_exceptions or the maximum number of retries has been reached
