@@ -1,22 +1,29 @@
 """Router v2 pick functions (Luna via OpenRouter). Prompts hold task text + factual harness capability cards only."""
 import glob, json, os, sys
-from langchain_openai import ChatOpenAI
 
 HARNESSES = ["terminus-2", "mini-swe-agent", "pi"]
-DEFAULT = "terminus-2"   # harbor's own default agent; used on ties / low confidence
+DEFAULT = "mini-swe-agent"   # best fixed harness on the Qwen 89-task baseline; used on ties / low confidence
 TASK_ROOT = os.path.expanduser("~/.cache/harbor/tasks/packages/terminal-bench")
 TB_FALLBACK = os.environ.get("TB_TASK_DIR", "")
 
 CARDS = {
-    "terminus-2": "Drives one persistent tmux terminal by sending keystrokes and reading the raw screen. Terminal state (cwd, env vars, running programs) persists between steps. Suited to interactive programs, long-running commands and tasks that depend on live terminal state.",
-    "mini-swe-agent": "Runs every bash command in a fresh subprocess, so no terminal state persists; files are edited through shell commands. Suited to self-contained scripting, data processing and repository bug fixes.",
-    "pi": "Has dedicated file read, write and edit tools plus a bash tool, and can view images. Suited to creating or editing files and tasks involving images or documents.",
+    "terminus-2": "Controls one persistent tmux terminal by typing keystrokes and reading the screen. The shell session, working directory, environment variables and background processes persist between steps, and it can answer prompts inside running programs (REPLs, debuggers, editors, installers, password or y/n prompts, full-screen TUIs). Writing long files by typing is clumsy, and it only sees what is currently on screen.",
+    "mini-swe-agent": "Runs each bash command in a fresh subprocess and reads its full output. Nothing carries over between commands except files on disk (no cd, exported variables or background jobs), and it cannot interact with programs that wait for input. Creates and edits files with shell commands (heredocs, sed, python). Simple and predictable for non-interactive work.",
+    "pi": "Has dedicated tools to read, write and precisely edit files, plus a bash tool, and can view image files. Suited to creating or changing several source files, making targeted edits in large files, and tasks whose inputs include images or documents that must be inspected.",
 }
+
+GUIDE = """How to decide:
+- Default to mini-swe-agent. It handles non-interactive work done through commands: scripting, data processing, building and installing software, running tests, and fixing bugs in an existing repository.
+- Choose terminus-2 instead only when the task clearly depends on live terminal state: driving an interactive program or prompt, keeping a server or long-running process alive while testing it, or relying on the same shell session (cwd, environment, activated tools) across steps.
+- Choose pi instead only when the task clearly requires looking at images, or its main work is writing or editing substantial source files (new programs, multi-file changes, precise edits to large files).
+- When unsure, choose mini-swe-agent."""
 
 V1_PROMPT = """You route programming tasks to the most suitable agent harness.
 
 Harnesses:
 {descs}
+
+""" + GUIDE + """
 
 Task:
 \"\"\"
@@ -30,12 +37,14 @@ V2_PROMPT = """You choose which agent harness should attempt a terminal task. Ra
 Harnesses:
 {descs}
 
+""" + GUIDE + """
+
 Task:
 \"\"\"
 {task}
 \"\"\"
 
-Reply with only JSON: {{"reason": "<one short sentence about what the task needs>", "terminus-2": <1-5>, "mini-swe-agent": <1-5>, "pi": <1-5>}}"""
+Reply with only JSON: {{"reason": "<one short sentence naming the hardest part of the task>", "terminus-2": <1-5>, "mini-swe-agent": <1-5>, "pi": <1-5>}}"""
 
 
 def task_text(task):
@@ -47,6 +56,7 @@ _llm = None
 def _call(prompt):
     global _llm
     if _llm is None:
+        from langchain_openai import ChatOpenAI
         _llm = ChatOpenAI(model="openai/gpt-5.6-luna", base_url="https://openrouter.ai/api/v1", api_key=os.environ["OPENROUTER_API_KEY"],
                           temperature=0, timeout=60, max_retries=2, extra_body={"usage": {"include": True}})
     out = _llm.invoke(prompt)

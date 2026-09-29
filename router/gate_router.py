@@ -16,7 +16,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 
 HARNESSES = ["mini-swe-agent", "terminus-2", "opencode", "pi"]
-FALLBACK = "terminus-2"  # matches router.py's existing convention
+FALLBACK = "mini-swe-agent"  # matches router.py's FALLBACK
 TASK_ROOT = os.path.expanduser("~/.cache/harbor/tasks")
 XLSX = os.path.join(os.path.dirname(__file__), "..", "Qwen_89_Task_Comparison_2026-09-20.xlsx")
 

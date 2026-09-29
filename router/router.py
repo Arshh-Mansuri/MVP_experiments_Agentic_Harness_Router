@@ -12,13 +12,9 @@ TASK_ROOT = os.path.expanduser("~/.cache/harbor/tasks/packages/terminal-bench")
 LOG = os.path.join(os.path.dirname(__file__), "router_log.jsonl")
 MODEL = "openrouter/openai/gpt-5.6-luna"
 HARNESSES = ["terminus-2", "mini-swe-agent", "pi"]
-FALLBACK = "terminus-2"  # harbor's default agent; used only if Gemma output is invalid
+FALLBACK = "mini-swe-agent"  # best fixed harness on the Qwen 89-task baseline; used when router output is invalid or tied
 
-HARNESS_DESCRIPTIONS = {
-    "terminus-2": "Works interactively in a live terminal: runs commands, watches the output, and handles system administration, data recovery, file and environment tasks.",
-    "mini-swe-agent": "Runs bash commands step by step in a repository; suited to reading code and making code changes or bug fixes.",
-    "pi": "Uses dedicated file read, write and edit tools plus a shell; suited to writing and modifying source files.",
-}
+from router2 import CARDS as HARNESS_DESCRIPTIONS, GUIDE
 
 SCHEMA = {
     "type": "object",
@@ -32,6 +28,8 @@ PROMPT = """You route programming tasks to the most suitable agent harness.
 
 Harnesses:
 {descs}
+
+""" + GUIDE + """
 
 Task:
 \"\"\"
