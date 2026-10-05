@@ -1,0 +1,282 @@
+[?2004hroot@e6223e48bd71:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@e6223e48bd71:/app# clear
+[?2004l[H[J[3J[?2004hroot@e6223e48bd71:/app# printf '%s\n' '--- legacy ---'; sed -n '1,240p' /app/climate_analyzer/analyze_climate.py; printf '%s\n' '--- csv ---'; cat /app/climate_analyzer/sample_data/climate_data.csv; printf '%s\n' '--- config ---'; cat /app/climate_analyzer/config.ini
+[?2004l--- legacy ---
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Legacy Climate Data Analysis Script - Python 2.7
+BROKEN: This code will NOT run on modern Python systems
+"""
+
+from __future__ import print_function
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from ConfigParser import SafeConfigParser
+import cPickle as pickle
+import urllib2
+import StringIO
+
+# Python 2.7 specific imports that are broken
+from future_builtins import map, filter
+
+class ClimateAnalyzer:
+    def __init__(self, config_path="config.ini"):
+        self.config = SafeConfigParser()
+        self.config.read(config_path)
+        self.data_cache = {}
+        
+    def load_temperature_data(self, filename):
+        """Load temperature data using deprecated pandas API"""
+        # This will break: deprecated pandas API
+        df = pd.read_csv(filename, parse_dates=['date'], 
+                        date_parser=lambda x: pd.datetime.strptime(x, '%Y-%m-%d'))
+        
+        # Python 2 string handling - broken on Python 3
+        df['station_name'] = df['station_name'].apply(lambda x: unicode(x, 'utf-8') if isinstance(x, str) else x)
+        return df
+    
+    def calculate_anomalies(self, temperature_series):
+        """Calculate temperature anomalies using old NumPy API"""
+        # Deprecated NumPy function
+        baseline = np.mean(temperature_series, dtype=np.float)
+        
+        # Old-style array creation that's inefficient
+        anomalies = np.zeros(len(temperature_series), dtype=np.float)
+        for i in xrange(len(temperature_series)):  # xrange is Python 2 only
+            anomalies[i] = temperature_series.iloc[i] - baseline
+            
+        return anomalies
+    
+    def create_visualization(self, data, title):
+        """Create plots using old matplotlib API"""
+        fig = plt.figure(figsize=(12, 6))
+        
+        # Deprecated matplotlib syntax
+        ax = fig.add_subplot(111)
+        ax.plot_date(data.index, data.values, 'b-')
+        ax.set_title(title, fontsize=16, fontweight='bold')
+        
+        # Old-style date formatting
+        import matplotlib.dates as mdates
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+        ax.xaxis.set_major_locator(mdates.YearLocator())
+        
+        # This will cause encoding issues
+        plt.savefig('/tmp/climate_plot_æøå.png', dpi=150)  # Unicode filename issue
+        plt.show()
+    
+    def run_analysis(self):
+        """Main analysis pipeline with Python 2 patterns"""
+        print "Starting climate analysis..."  # Python 2 print statement
+        
+        try:
+            # This will fail - hardcoded path and encoding
+            data = self.load_temperature_data('/app/sample_data/climate_data_år.csv')
+            
+            # Dictionary iteration that breaks in Python 3
+            for station, group in data.groupby('station_id').iteritems():
+                anomalies = self.calculate_anomalies(group['temperature'])
+                
+                # String formatting that's deprecated
+                title = "Temperature Anomalies - Station %s" % station
+                self.create_visualization(pd.Series(anomalies, index=group['date']), title)
+                
+            # Old-style exception handling
+        except Exception, e:  # Python 2 syntax
+            print "Error occurred: %s" % str(e)
+            raise
+        
+        print "Analysis completed successfully!"
+
+if __name__ == "__main__":
+    # Python 2 style main execution
+    analyzer = ClimateAnalyzer()
+    analyzer.run_analysis()--- csv ---
+date,station_id,station_name,temperature
+2020-01-01,101,Arctic Station,-15.2
+2020-01-02,101,Arctic Station,-12.8
+2020-01-03,101,Arctic Station,-18.5
+2020-01-04,101,Arctic Station,-14.1
+2020-01-05,101,Arctic Station,-16.7
+2020-01-06,101,Arctic Station,-11.3
+2020-01-07,101,Arctic Station,-19.8
+2020-01-08,101,Arctic Station,-13.4
+2020-01-09,101,Arctic Station,-17.2
+2020-01-10,101,Arctic Station,-15.9
+2020-02-01,102,Tropical Station,28.5
+2020-02-02,102,Tropical Station,31.2
+2020-02-03,102,Tropical Station,29.8
+2020-02-04,102,Tropical Station,32.1
+2020-02-05,102,Tropical Station,30.4
+2020-02-06,102,Tropical Station,27.9
+2020-02-07,102,Tropical Station,33.6
+2020-02-08,102,Tropical Station,29.3
+2020-02-09,102,Tropical Station,31.8
+2020-02-10,102,Tropical Station,28.7--- config ---
+[database]
+host = localhost
+port = 5432
+name = climate_data
+user = climate_user
+# Password with special characters that cause encoding issues in Python 2
+password = pāssw0rd_with_ūnicōde
+
+[analysis]
+baseline_years = 1981,2010
+temperature_threshold = 2.0
+# Path with unicode characters that break in Python 2
+output_path = /tmp/climate_results_år_måned
+
+[plotting] 
+figure_width = 12
+figure_height = 8
+dpi = 300
+# Color scheme using old matplotlib color names
+color_scheme = b,g,r,c,m,y,k[?2004hroot@e6223e48bd71:/app# cat > /app/analyze_climate_modern.py <<'PY'
+[?2004lY
+cat > /app/requirements.txt <<'EOF'
+numpy>=1.24
+pandas>=2.0
+matplotlib>=3.7
+EOF
+chmod +x /app/analyze_climate_modern.py
+[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """Modern Python 3 climate analysis script."""
+[?2004l[?2004h> 
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> DATA_FILE = (
+[?2004l[?2004h>     Path(__file__).resolve().parent
+[?2004l[?2004h>     / "climate_analyzer"
+[?2004l[?2004h>     / "sample_data"
+[?2004l[?2004h>     / "climate_data.csv"
+[?2004l[?2004h> )
+[?2004l[?2004h> STATIONS = (101, 102)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main() -> None:
+[?2004l[?2004h>     """Read climate data and print mean temperatures for both stations."""
+[?2004l[?2004h>     data = pd.read_csv(DATA_FILE, encoding="utf-8")
+[?2004l[?2004h> 
+[?2004l[?2004h>     station_column = "station" if "station" in data.columns else "station_id"
+[?2004l[?2004h>     temperature_column = (
+[?2004l[?2004h>         "temperature" if "temperature" in data.columns else "temp"
+[?2004l[?2004h>     )
+[?2004l[?2004h> 
+[?2004l[?2004h>     for station_id in STATIONS:
+[?2004l[?2004h>         temperatures = data.loc[data[station_column] == station_id, temperature_column]
+[?2004l[?2004h>         if temperatures.empty:
+[?2004l[?2004h>             raise ValueError(f"No data found for station {station_id}")
+[?2004l[?2004h>         print(
+[?2004l[?2004h>             f"Station {station_id} mean temperature: "
+[?2004l[?2004h>             f"{temperatures.mean():.1f}°C"
+[?2004l[?2004h>         )
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     main()
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@e6223e48bd71:/app# cat > /app/requirements.txt <<'EOF'
+[?2004l[?2004h> numpy>=1.24
+[?2004l[?2004h> pandas>=2.0
+[?2004l[?2004h> matplotlib>=3.7
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@e6223e48bd71:/app# chmod +x /app/analyze_climate_modern.py
+[?2004l[?2004hroot@e6223e48bd71:/app# python3 /app/analyze_climate_modern.py
+[?2004lStation 101 mean temperature: -15.5°C
+Station 102 mean temperature: 30.3°C
+[?2004hroot@e6223e48bd71:/app# printf '%s\n' '--- script ---'; nl -ba /app/analyze_climate_modern.py; printf '%s\n' '--- requirements ---'; cat /app/requirements.txt; printf '%s\n' '--- syntax check ---'; python3 -m py_compile /app/analyze_climate_modern.py
+[?2004l--- script ---
+     1	#!/usr/bin/env python3
+     2	"""Modern Python 3 climate analysis script."""
+     3	
+     4	from pathlib import Path
+     5	
+     6	import pandas as pd
+     7	
+     8	
+     9	DATA_FILE = (
+    10	    Path(__file__).resolve().parent
+    11	    / "climate_analyzer"
+    12	    / "sample_data"
+    13	    / "climate_data.csv"
+    14	)
+    15	STATIONS = (101, 102)
+    16	
+    17	
+    18	def main() -> None:
+    19	    """Read climate data and print mean temperatures for both stations."""
+    20	    data = pd.read_csv(DATA_FILE, encoding="utf-8")
+    21	
+    22	    station_column = "station" if "station" in data.columns else "station_id"
+    23	    temperature_column = (
+    24	        "temperature" if "temperature" in data.columns else "temp"
+    25	    )
+    26	
+    27	    for station_id in STATIONS:
+    28	        temperatures = data.loc[data[station_column] == station_id, temperature_column]
+    29	        if temperatures.empty:
+    30	            raise ValueError(f"No data found for station {station_id}")
+    31	        print(
+    32	            f"Station {station_id} mean temperature: "
+    33	            f"{temperatures.mean():.1f}°C"
+    34	        )
+    35	
+    36	
+    37	if __name__ == "__main__":
+    38	    main()
+--- requirements ---
+numpy>=1.24
+pandas>=2.0
+matplotlib>=3.7
+--- syntax check ---
+[?2004hroot@e6223e48bd71:/app# cat > /app/analyze_climate_modern.py <<'PY'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """Calculate mean temperatures for the climate data stations."""
+[?2004l[?2004h> 
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> DATA_PATH = (
+[?2004l[?2004h>     Path(__file__).resolve().parent
+[?2004l[?2004h>     / "climate_analyzer"
+[?2004l[?2004h>     / "sample_data"
+[?2004l[?2004h>     / "climate_data.csv"
+[?2004l[?2004h> )
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main() -> None:
+[?2004l[?2004h>     data = pd.read_csv(DATA_PATH, encoding="utf-8")
+[?2004l[?2004h>     for station_id in (101, 102):
+[?2004l[?2004h>         station_data = data.loc[data["station_id"] == station_id, "temperature"]
+[?2004l[?2004h>         if station_data.empty:
+[?2004l[?2004h>             raise ValueError(f"No data found for station {station_id}")
+[?2004l[?2004h>         mean_temperature = station_data.mean()
+[?2004l[?2004h>         print(f"Station {station_id} mean temperature: {mean_temperature:.1f}°C")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     main()
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@e6223e48bd71:/app# cat > /app/requirements.txt <<'EOF'
+[?2004l[?2004h> numpy>=1.24
+[?2004l[?2004h> pandas>=2.0
+[?2004l[?2004h> matplotlib>=3.7
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@e6223e48bd71:/app# chmod +x /app/analyze_climate_modern.py
+[?2004l[?2004hroot@e6223e48bd71:/app# python3 /app/analyze_climate_modern.py
+[?2004ltest -f /app/analyze_climate_modern.py && test -f /app/requirements.txt && grep -q 'Station 101 mean temperature: -15.5°C' <(python3 /app/analyze_climate_modern.py) && grep -q 'Station 102 mean temperature: 30.3°C' <(python3 /app/analyze_climate_modern.py) && echo 'verification passed'
+Station 101 mean temperature: -15.5°C
+Station 102 mean temperature: 30.3°C
+[?2004hroot@e6223e48bd71:/app# test -f /app/analyze_climate_modern.py && test -f /app/requirements.txt && grep -q 'Station 101 mean temperature: -15.5°C' <(python3 /app/analyze_climate_modern.py) && grep -q 'Station 102 mean temperature: 30.3°C' <(python3 /app/analyze_climate_modern.py) && echo 'verification passed'
+[?2004lverification passed
+[?2004hroot@e6223e48bd71:/app# 

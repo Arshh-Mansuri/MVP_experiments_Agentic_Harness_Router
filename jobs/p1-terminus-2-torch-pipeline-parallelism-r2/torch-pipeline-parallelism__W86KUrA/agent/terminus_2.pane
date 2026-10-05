@@ -1,0 +1,203 @@
+[?2004hroot@2136dee51ad5:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@2136dee51ad5:/app# clear
+[?2004l[H[J[3J[?2004hroot@2136dee51ad5:/app# python3 - <<'PY'
+[?2004l[?2004h> import torch, transformers, inspect
+[?2004l[?2004h> from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaModel
+[?2004l[?2004h> print('torch', torch.__version__)
+[?2004l[?2004h> print('transformers', transformers.__version__)
+[?2004l[?2004h> print('LlamaDecoderLayer.forward:', inspect.signature(LlamaDecoderLayer.forward))
+[?2004l[?2004h> print('LlamaModel.forward:', inspect.signature(LlamaModel.forward))
+[?2004l[?2004h> PY
+[?2004lTraceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+ModuleNotFoundError: No module named 'torch'
+[?2004hroot@2136dee51ad5:/app# cat > /app/pipeline_parallel.py <<'PY'
+[?2004l[?2004h> """AFAB pipeline-parallel training for Hugging Face LLaMA models."""
+[?2004l[?2004h> 
+[?2004l[?2004h> import inspect
+[?2004l[?2004h> from typing import List
+[?2004l[?2004h> 
+[?2004l [?2004h> import torch
+[?2004l[?2004h> import torch.distributed as dist
+[?2004lt_[?2004h> import torch.nn.functional as F
+[?2004l[?2004h> 
+[?2004lc[?2004h> 
+[?2004l[?2004h> def _call_decoder_layer(layer, hidden_states, attention_mask, position_ids,
+[?2004l[?2004h>                         position_embeddings=None):
+[?2004l[?2004h>     """Call decoder layers across the relevant HF Transformers API variants."""
+[?2004l[?2004h>     parameters = inspect.signature(layer.forward).parameters
+[?2004l[?2004h>     kwargs = {}
+[?2004lres_grad_(True)
+[?2004h>     if "attention_mask" in parameters:
+[?2004ldden)
+  [?2004h>         kwargs["attention_mask"] = attention_mask
+[?2004l[?2004h>     if "position_ids" in parameters:
+[?2004l[?2004h>         kwargs["position_ids"] = position_ids
+[?2004l[?2004h>     if position_embeddings is not None and "position_embeddings" in parameters:
+[?2004l[?2004h>         kwargs["position_embeddings"] = position_embeddings
+[?2004l[?2004h>     if "past_key_value" in parameters:
+[?2004l[?2004h>         kwargs["past_key_value"] = None
+[?2004l_[?2004h>     if "past_key_values" in parameters:
+[?2004l[?2004h>         kwargs["past_key_values"] = None
+[?2004l[?2004h>     if "use_cache" in parameters:
+[?2004l[?2004h>         kwargs["use_cache"] = False
+[?2004ld operation occurs until every micro[?2004h>     if "output_attentions" in parameters:
+[?2004l[?2004h>         kwargs["output_attentions"] = False
+[?2004l stage.
+    for microbatch in revers[?2004h> 
+[?2004l[?2004h>     result = layer(hidden_states, **kwargs)
+[?2004l[?2004h>     return result[0] if isinstance(result, (tuple, list)) else result
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l [?2004h> def _make_causal_mask(batch, sequence_length, device, dtype):
+[?2004l[?2004h>     """Return the additive causal mask accepted by LLaMA attention layers."""
+[?2004l[?2004h>     # The diagonal and lower triangle are zero; the strict upper triangle is -inf.
+[?2004l[?2004h>     mask = torch.zeros(
+[?2004l[?2004h>         (sequence_length, sequence_length), device=device, dtype=dtype
+[?2004l[?2004h>     )
+[?2004l",
+   [?2004h>     mask = mask.masked_fill(
+[?2004l[?2004h>         torch.triu(torch.ones_like(mask, dtype=torch.bool), diagonal=1),
+[?2004luts[micr[?2004h>         torch.finfo(dtype).min,
+[?2004l[?2004h>     )
+[?2004l[?2004h>     return mask[None, None, :, :].expand(batch, 1, sequence_length, sequence_length)
+[?2004l[?2004h> 
+[?2004l [?2004h> 
+[?2004l[?2004h> def _position_embeddings(backbone, hidden_states, position_ids):
+[?2004l[?2004h>     rotary = getattr(backbone, "rotary_emb", None)
+[?2004l[?2004h>     if rotary is None:
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     try:
+[?2004lne:
+     [?2004h>         params = inspect.signature(rotary.forward).parameters
+[?2004l[?2004h>         kwargs = {}
+[?2004l[?2004h>         if "position_ids" in params:
+[?2004l[?2004h>             kwargs["position_ids"] = position_ids
+[?2004l[?2004h>         if "cache_position" in params:
+[?2004l[?2004h>             kwargs["cache_position"] = position_ids[0]
+[?2004l[?2004h>         return rotary(hidden_states, **kwargs)
+[?2004l # None elsewhere avoi[?2004h>     except (TypeError, ValueError):
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             return rotary(hidden_states, position_ids)
+[?2004l[?2004h>         except TypeError:
+[?2004l[?2004h>             return None
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def _layer_ranges(num_layers, world_size):
+[?2004l[?2004h>     base, remainder = divmod(num_layers, world_size)
+[?2004l[?2004h>     ranges = []
+[?2004l[?2004h>     start = 0
+[?2004l[?2004h>     for rank in range(world_size):
+[?2004l[?2004h>         count = base + (1 if rank < remainder else 0)
+[?2004l[?2004h>         ranges.append((start, start + count))
+[?2004l[?2004h>         start += count
+[?2004l[?2004h>     return ranges
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def train_step_pipeline_afab(model, inputs, targets, device, dtype):
+[?2004l[?2004h>     """Run one all-forward-all-backward pipeline-parallel training step.
+[?2004l[?2004h> 
+[?2004l[?2004h>     Decoder layers are divided into contiguous balanced ranges.  Activations
+[?2004l[?2004h>     crossing a stage boundary are detached before transmission, while the
+[?2004l[?2004h>     sending stage retains its local autograd graph for the later backward pass.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+[?2004l[?2004h>     world_size = (dist.get_world_size()
+[?2004l[?2004h>                   if dist.is_available() and dist.is_initialized() else 1)
+[?2004l[?2004h> 
+[?2004l[?2004h>     backbone = model.model
+[?2004l[?2004h>     layers = backbone.layers
+[?2004l[?2004h>     first, last = _layer_ranges(len(layers), world_size)[rank]
+[?2004l[?2004h>     local_layers = layers[first:last]
+[?2004l[?2004h>     num_microbatches = len(inputs)
+[?2004l[?2004h>     if num_microbatches != len(targets):
+[?2004l[?2004h>         raise ValueError("inputs and targets must contain the same number of microbatches")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # LLaMA's decoder layers use a causal additive mask.  Position IDs are
+[?2004l[?2004h>     # regenerated per microbatch because sequence lengths may differ.
+[?2004l[?2004h>     saved_outputs: List[torch.Tensor] = []
+[?2004l[?2004h>     saved_inputs: List[torch.Tensor] = []
+[?2004l[?2004h> 
+[?2004l[?2004h>     for microbatch, input_ids in enumerate(inputs):
+[?2004l[?2004h>         input_ids = input_ids.to(device=device)
+[?2004l[?2004h>         batch, seq_len = input_ids.shape[-2], input_ids.shape[-1]
+[?2004l[?2004h>         position_ids = torch.arange(seq_len, device=device, dtype=torch.long)
+[?2004l[?2004h>         position_ids = position_ids.unsqueeze(0).expand(batch, -1)
+[?2004l[?2004h>         hidden = None
+[?2004l[?2004h> 
+[?2004l[?2004h>         if rank == 0:
+[?2004l[?2004h>             hidden = backbone.embed_tokens(input_ids).to(dtype=dtype, device=device)
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             hidden = torch.empty(
+[?2004l[?2004h>                 (batch, seq_len, model.config.hidden_size),
+[?2004l[?2004h>                 device=device,
+[?2004l[?2004h>                 dtype=dtype,
+[?2004l[?2004h>             )
+[?2004l[?2004h>             dist.recv(hidden, src=rank - 1, tag=microbatch)
+[?2004l[?2004h>             hidden.requires_grad_(True)
+[?2004l[?2004h> 
+[?2004l[?2004h>         saved_inputs.append(hidden)
+[?2004l[?2004h>         mask = _make_causal_mask(batch, seq_len, device, hidden.dtype)
+[?2004l[?2004h>         pos_emb = _position_embeddings(backbone, hidden, position_ids)
+[?2004l[?2004h>         for layer in local_layers:
+[?2004l[?2004h>             hidden = _call_decoder_layer(
+[?2004l[?2004h>                 layer, hidden, mask, position_ids, pos_emb
+[?2004l[?2004h>             )
+[?2004l[?2004h> 
+[?2004l[?2004h>         saved_outputs.append(hidden)
+[?2004l[?2004h>         if rank < world_size - 1:
+[?2004l[?2004h>             dist.send(hidden.detach().contiguous(), dst=rank + 1, tag=microbatch)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # AFAB: no backward operation occurs until every microbatch has completed
+[?2004l[?2004h>     # its forward pass on this stage.
+[?2004l[?2004h>     for microbatch in reversed(range(num_microbatches)):
+[?2004l[?2004h>         output = saved_outputs[microbatch]
+[?2004l[?2004h>         if rank == world_size - 1:
+[?2004l[?2004h>             hidden = backbone.norm(output)
+[?2004l[?2004h>             logits = model.lm_head(hidden)
+[?2004l[?2004h>             target = targets[microbatch].to(device=device, dtype=torch.long)
+[?2004l[?2004h>             loss = F.cross_entropy(
+[?2004l[?2004h>                 logits.float().reshape(-1, logits.shape[-1]),
+[?2004l[?2004h>                 target.reshape(-1),
+[?2004l[?2004h>                 reduction="mean",
+[?2004l[?2004h>             ) / max(1, num_microbatches)
+[?2004l[?2004h>             loss.backward()
+[?2004l[?2004h>             grad = saved_inputs[microbatch].grad
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             grad = torch.empty_like(output)
+[?2004l[?2004h>             dist.recv(grad, src=rank + 1, tag=100000 + microbatch)
+[?2004l[?2004h>             torch.autograd.backward(output, grad)
+[?2004l[?2004h>             grad = saved_inputs[microbatch].grad
+[?2004l[?2004h> 
+[?2004l[?2004h>         if rank > 0:
+[?2004l[?2004h>             if grad is None:
+[?2004l[?2004h>                 raise RuntimeError("pipeline stage produced no input gradient")
+[?2004l[?2004h>             dist.send(grad.to(device=device, dtype=dtype).contiguous(),
+[?2004l[?2004h>                       dst=rank - 1, tag=100000 + microbatch)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # The loss is intentionally returned only on the final rank.  Returning
+[?2004l[?2004h>     # None elsewhere avoids introducing a second cross-stage synchronization.
+[?2004l[?2004h>     return loss.detach() if rank == world_size - 1 else None
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@2136dee51ad5:/app# python3 -m py_compile /app/pipeline_parallel.py
+[?2004l[?2004hroot@2136dee51ad5:/app# python3 - <<'PY'
+[?2004l[?2004h> p = '/app/pipeline_parallel.py'
+[?2004l[?2004h> s = open(p).read()
+[?2004l[?2004h> old = '            hidden = backbone.embed_tokens(input_ids).to(dtype=dtype, device=device)\n'
+[?2004l[?2004h> new = old + '            # Embedding output is non-leaf; retain its gradient for pipeline send.\n            hidden.retain_grad()\n'
+[?2004l[?2004h> if old not in s:
+[?2004l[?2004h>     raise SystemExit('expected embedding line not found')
+[?2004l[?2004h> open(p, 'w').write(s.replace(old, new, 1))
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@2136dee51ad5:/app# python3 -m py_compile /app/pipeline_parallel.py
+[?2004l[?2004hroot@2136dee51ad5:/app# grep -n -A4 -B2 'embed_tokens' /app/pipeline_parallel.py
+[?2004l[32m[K108[m[K[36m[K-[m[K
+[32m[K109[m[K[36m[K-[m[K        if rank == 0:
+[32m[K110[m[K[36m[K:[m[K            hidden = backbone.[01;31m[Kembed_tokens[m[K(input_ids).to(dtype=dtype, device=device)
+[32m[K111[m[K[36m[K-[m[K            # Embedding output is non-leaf; retain its gradient for pipeline send.
+[32m[K112[m[K[36m[K-[m[K            hidden.retain_grad()
+[32m[K113[m[K[36m[K-[m[K        else:
+[32m[K114[m[K[36m[K-[m[K            hidden = torch.empty(
+[?2004hroot@2136dee51ad5:/app# 

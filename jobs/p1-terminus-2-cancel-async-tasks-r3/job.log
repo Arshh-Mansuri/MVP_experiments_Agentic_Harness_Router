@@ -1,0 +1,15 @@
+Skipping image OS validation for alexgshaw/cancel-async-tasks:20251031: docker inspect returned 1
+Installing: tmux, asciinema
+Detected system: {'os': 'debian-based', 'package_manager': 'apt-get', 'update_command': None}
+Installing tools using apt-get: DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tmux asciinema
+Starting recording.
+Sending keys: ['asciinema rec --stdin /logs/agent/recording.cast', 'Enter'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['clear', 'Enter'] min_timeout_sec: 0.0 max_timeout_sec: 180.0
+Sending keys: ['cat > /app/run.py <<\'PY\'\nimport asyncio\nfrom collections.abc import Awaitable, Callable\n\n\nasync def run_tasks(\n    tasks: list[Callable[[], Awaitable[None]]],\n    max_concurrent: int,\n) -> None:\n    """Run async jobs with at most max_concurrent jobs active at once.\n\n    If this function is cancelled, all started or queued jobs are cancelled and\n    awaited so their cleanup/finally blocks have an opportunity to run.\n    """\n    if max_concurrent <= 0:\n        raise ValueError("max_concurrent must be greater than zero")\n\n    semaphore = asyncio.Semaphore(max_concurrent)\n\n    async def run_one(task: Callable[[], Awaitable[None]]) -> None:\n        async with semaphore:\n            await task()\n\n    workers = [asyncio.create_task(run_one(task)) for task in tasks]\n\n    try:\n        results = await asyncio.gather(*workers, return_exceptions=True)\n        for result in results:\n            if isinstance(result, BaseException):\n                raise result\n    finally:\n        for worker in workers:\n            if not worker.done():\n                worker.cancel()\n        if workers:\n            await asyncio.gather(*workers, return_exceptions=True)\nPY\npython3 -m py_compile /app/run.py\npython3 - <<\'PY\'\nimport asyncio\nfrom run import run_tasks\n\nasync def main():\n    active = 0\n    maximum = 0\n    cleaned = 0\n\n    async def job():\n        nonlocal active, maximum, cleaned\n        active += 1\n        maximum = max(maximum, active)\n        try:\n            await asyncio.sleep(0.05)\n        finally:\n            active -= 1\n            cleaned += 1\n\n    await run_tasks([job for _ in range(5)], 2)\n    assert maximum == 2\n    assert cleaned == 5\n\nasyncio.run(main())\nprint(\'ok\')\nPY\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-cancel-async-tasks-r3/cancel-async-tasks__y7zhnoz/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-cancel-async-tasks-r3/cancel-async-tasks__y7zhnoz/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-cancel-async-tasks-r3/cancel-async-tasks__y7zhnoz/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-cancel-async-tasks-r3/cancel-async-tasks__y7zhnoz/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-cancel-async-tasks-r3/cancel-async-tasks__y7zhnoz/agent/trajectory.json
+Collecting main service artifacts

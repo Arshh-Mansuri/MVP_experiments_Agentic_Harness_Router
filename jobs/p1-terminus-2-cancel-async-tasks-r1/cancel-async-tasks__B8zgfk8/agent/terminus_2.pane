@@ -1,0 +1,184 @@
+[?2004hroot@46f14666ca2b:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@46f14666ca2b:/app# clear
+[?2004l[H[J[3J[?2004hroot@46f14666ca2b:/app# cat > /app/run.py <<'PY'
+[?2004lher(*child_tasks, return_exceptions=True)
+        raise
+
+    for result in results:
+        if isinstance(result, BaseException):
+            raise result
+PY
+python3 -m py_compile /app/run.py
+python3 - <<'PY'
+import asyncio
+import sys
+sys.path.insert(0, '/app')
+from run import run_tasks
+
+async def main():
+    active = 0
+    peak = 0
+    cleaned = 0
+
+    async def job():
+        nonlocal active, peak, cleaned
+        active += 1
+        peak = max(peak, active)
+        try:
+            await asyncio.sleep(0.02)
+        finally:
+            active -= 1
+            cleaned += 1
+
+    await run_tasks([job for _ in range(5)], 2)
+    assert peak == 2 and cleaned == 5
+
+    async def cancellable():
+        nonlocal cleaned
+        try:
+            await asyncio.sleep(10)
+        finally:
+            cleaned += 1
+
+    runner = asyncio.create_task(run_tasks([cancellable, cancellable], 2))
+    await asyncio.sleep(0.01)
+    runner.cancel()
+    try:
+        await runner
+    except asyncio.CancelledError:
+        pass
+    assert cleaned == 7
+
+asyncio.run(main())
+print('ok')
+PY[?2004h> import asyncio
+[?2004l[?2004h> from collections.abc import Awaitable, Callable
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> async def run_tasks(
+[?2004l[?2004h>     tasks: list[Callable[[], Awaitable[None]]],
+[?2004l[?2004h>     max_concurrent: int,
+[?2004l[?2004h> ) -> None:
+[?2004l[?2004h>     """Run async job callables with a bound on concurrent execution.
+[?2004l[?2004h> 
+[?2004l[?2004h>     If this function is cancelled, all started jobs are cancelled and awaited
+[?2004l[?2004h>     before cancellation is propagated, so their cleanup code can run.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     if max_concurrent <= 0:
+[?2004l[?2004h>         raise ValueError("max_concurrent must be greater than zero")
+[?2004l[?2004h> 
+[?2004l[?2004h>     semaphore = asyncio.Semaphore(max_concurrent)
+[?2004l[?2004h> 
+[?2004l[?2004h>     async def run_one(task_factory: Callable[[], Awaitable[None]]) -> None:
+[?2004l[?2004h>         async with semaphore:
+[?2004l[?2004h>             await task_factory()
+[?2004l[?2004h> 
+[?2004l[?2004h>     child_tasks = [asyncio.create_task(run_one(task)) for task in tasks]
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         results = await asyncio.gather(*child_tasks, return_exceptions=True)
+[?2004l[?2004h>     except asyncio.CancelledError:
+[?2004l[?2004h>         for task in child_tasks:
+[?2004l[?2004h>             if not task.done():
+[?2004l[?2004h>                 task.cancel()
+[?2004l[?2004h>         await asyncio.gather(*child_tasks, return_exceptions=True)
+[?2004l[?2004h>         raise
+[?2004l[?2004h> 
+[?2004l[?2004h>     for result in results:
+[?2004l[?2004h>         if isinstance(result, BaseException):
+[?2004l[?2004h>             raise result
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@46f14666ca2b:/app# python3 -m py_compile /app/run.py
+[?2004l[?2004hroot@46f14666ca2b:/app# python3 - <<'PY'
+[?2004l[?2004h> import asyncio
+[?2004l[?2004h> import sys
+[?2004l[?2004h> sys.path.insert(0, '/app')
+[?2004l[?2004h> from run import run_tasks
+[?2004l[?2004h> 
+[?2004l[?2004h> async def main():
+[?2004l[?2004h>     active = 0
+[?2004l[?2004h>     peak = 0
+[?2004l[?2004h>     cleaned = 0
+[?2004l[?2004h> 
+[?2004l[?2004h>     async def job():
+[?2004l[?2004h>         nonlocal active, peak, cleaned
+[?2004l[?2004h>         active += 1
+[?2004l[?2004h>         peak = max(peak, active)
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             await asyncio.sleep(0.02)
+[?2004l[?2004h>         finally:
+[?2004l[?2004h>             active -= 1
+[?2004l[?2004h>             cleaned += 1
+[?2004l[?2004h> 
+[?2004l[?2004h>     await run_tasks([job for _ in range(5)], 2)
+[?2004l[?2004h>     assert peak == 2 and cleaned == 5
+[?2004l[?2004h> 
+[?2004l[?2004h>     async def cancellable():
+[?2004l[?2004h>         nonlocal cleaned
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             await asyncio.sleep(10)
+[?2004l[?2004h>         finally:
+[?2004l[?2004h>             cleaned += 1
+[?2004l[?2004h> 
+[?2004l[?2004h>     runner = asyncio.create_task(run_tasks([cancellable, cancellable], 2))
+[?2004l[?2004h>     await asyncio.sleep(0.01)
+[?2004l[?2004h>     runner.cancel()
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         await runner
+[?2004l[?2004h>     except asyncio.CancelledError:
+[?2004l[?2004h>         pass
+[?2004l[?2004h>     assert cleaned == 7
+[?2004l[?2004h> 
+[?2004l[?2004h> asyncio.run(main())
+[?2004l[?2004h> print('ok')
+[?2004l[?2004h> PYsed -n '1,240p' /app/run.py
+[?2004l[?2004h> python3 -m py_compile /app/run.py && python3 - <<'PY'
+[?2004l[?2004h> import asyncio
+[?2004l[?2004h> import sys
+[?2004l[?2004h> sys.path.insert(0, '/app')
+[?2004l[?2004h> from run import run_tasks
+[?2004l[?2004h> 
+[?2004l[?2004h> async def main():
+[?2004l[?2004h>     active = 0
+[?2004l[?2004h>     peak = 0
+[?2004l[?2004h>     cleaned = 0
+[?2004l[?2004h> 
+[?2004l[?2004h>     async def job():
+[?2004l[?2004h>         nonlocal active, peak, cleaned
+[?2004l[?2004h>         active += 1
+[?2004l[?2004h>         peak = max(peak, active)
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             await asyncio.sleep(0.01)
+[?2004l[?2004h>         finally:
+[?2004l[?2004h>             active -= 1
+[?2004l[?2004h>             cleaned += 1
+[?2004l[?2004h> 
+[?2004l[?2004h>     await run_tasks([job] * 6, 2)
+[?2004l[?2004h>     assert peak == 2
+[?2004l[?2004h>     assert cleaned == 6
+[?2004l[?2004h> 
+[?2004l[?2004h>     async def long_job():
+[?2004l[?2004h>         nonlocal cleaned
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             await asyncio.sleep(10)
+[?2004l[?2004h>         finally:
+[?2004l[?2004h>             cleaned += 1
+[?2004l[?2004h> 
+[?2004l[?2004h>     pending = asyncio.create_task(run_tasks([long_job, long_job], 2))
+[?2004l[?2004h>     await asyncio.sleep(0.02)
+[?2004l[?2004h>     pending.cancel()
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         await pending
+[?2004l[?2004h>     except asyncio.CancelledError:
+[?2004l[?2004h>         pass
+[?2004l[?2004h>     assert cleaned == 8
+[?2004l[?2004h> 
+[?2004l[?2004h> asyncio.run(main())
+[?2004l[?2004h> print('validation ok')
+[?2004l[?2004h> PY
+[?2004l  File [35m"<stdin>"[0m, line [35m42[0m
+    PYsed -n [1;31m'1,240p'[0m /app/run.py
+             [1;31m^^^^^^^^[0m
+[1;35mSyntaxError[0m: [35minvalid syntax[0m
+[?2004hroot@46f14666ca2b:/app# 

@@ -1,0 +1,183 @@
+[?2004hroot@0e5bc2664bc4:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@0e5bc2664bc4:/app# clear
+[?2004l[H[J[3J[?2004hroot@0e5bc2664bc4:/app# pwd && ls -la && find . -maxdepth 2 -type f | sort | head -200
+[?2004l/app
+total 8
+drwxr-xr-x 2 root root 4096 Oct 22  2025 [0m[01;34m.[0m
+drwxr-xr-x 1 root root 4096 Oct  3 17:44 [01;34m..[0m
+[?2004hroot@0e5bc2664bc4:/app# python3 - <<'PY'
+[?2004l[?2004h> import torch
+[?2004l[?2004h> print('torch', torch.__version__)
+[?2004l[?2004h> try:
+[?2004l[?2004h>  import transformers
+[?2004l[?2004h>  print('transformers', transformers.__version__)
+[?2004l[?2004h>  from transformers import LlamaForCausalLM
+[?2004l[?2004h>  print(LlamaForCausalLM)
+[?2004l[?2004h> except Exception as e:
+[?2004l[?2004h>  print('transformers error:', repr(e))
+[?2004l[?2004h> PY
+[?2004lTraceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+ModuleNotFoundError: No module named 'torch'
+[?2004hroot@0e5bc2664bc4:/app# cat > /app/pipeline_parallel.py <<'PY'
+[?2004l[?2004h> """AFAB pipeline-parallel training helper for Hugging Face LLaMA models."""
+[?2004l[?2004h> 
+[?2004l[?2004h> import inspect
+[?2004l[?2004h> from typing import List
+[?2004l[?2004h> 
+[?2004l[?2004h> import torch
+[?2004l[?2004h> import torch.distributed as dist
+[?2004l[?2004h> import torch.nn.functional as F
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def _layer_forward(layer, hidden, position_ids):
+[?2004l(hidden)
+
+        for layer_idx in range(first[?2004h>     """Call a LlamaDecoderLayer across several transformers API versions."""
+[?2004l[?2004h>     try:
+[?2004lion_ids)
+[?2004h>         params = inspect.signature(layer.forward).parameters
+[?2004l[?2004h>     except (TypeError, ValueError):
+[?2004l[?2004h>         params = {}
+[?2004l[?2004h> 
+[?2004l        [?2004h>     kwargs = {}
+[?2004l[?2004h>     if "attention_mask" in params:
+[?2004l m[?2004h>         kwargs["attention_mask"] = None
+[?2004l[?2004h>     if "position_ids" in params:
+[?2004l[?2004h>         kwargs["position_ids"] = position_ids
+[?2004l[?2004h>     if "past_key_value" in params:
+[?2004l[?2004h>         kwargs["past_key_value"] = None
+[?2004l[?2004h>     if "past_key_values" in params:
+[?2004l[?2004h>         kwargs["past_key_values"] = None
+[?2004l[?2004h>     if "use_cache" in params:
+[?2004l[?2004h>         kwargs["use_cache"] = False
+[?2004l[?2004h>     if "cache_position" in params:
+[?2004l[?2004h>         kwargs["cache_position"] = position_ids
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Newer transformers versions may expect precomputed rotary embeddings.
+[?2004l[?2004h>     if "position_embeddings" in params:
+[?2004l[?2004h>         rotary = getattr(layer, "rotary_emb", None)
+[?2004l[?2004h>         if rotary is None:
+[?2004l[?2004h>             rotary = getattr(getattr(layer, "self_attn", None), "rotary_emb", None)
+[?2004l[?2004h>         if rotary is not None:
+[?2004l[?2004h>             try:
+[?2004l[?2004h>                 kwargs["position_embeddings"] = rotary(hidden, position_ids)
+[?2004l[?2004h>             except TypeError:
+[?2004l[?2004h>                 kwargs["position_embeddings"] = rotary(hidden, position_ids, None)
+[?2004l[?2004h> 
+[?2004l[?2004h>     out = layer(hidden, **kwargs)
+[?2004l[?2004h>     return out[0] if isinstance(out, (tuple, list)) else out
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def _balanced_range(num_layers, rank, world_size):
+[?2004l[?2004h>     """Return a contiguous, approximately equal layer interval for rank."""
+[?2004l[?2004h>     start = (num_layers * rank) // world_size
+[?2004l[?2004h>     end = (num_layers * (rank + 1)) // world_size
+[?2004l[?2004h>     return start, end
+[?2004lsend(input_grad.detach().to(device=device, dtype=dt[?2004h> 
+[?2004ly[?2004h> 
+[?2004l[?2004h> def _send(tensor, peer):
+[?2004l[?2004h>     dist.send(tensor=tensor.contiguous(), dst=peer)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def _recv_like(shape, device, dtype, peer):
+[?2004l[?2004h>     result = torch.empty(shape, device=device, dtype=dtype)
+[?2004l[?2004h>     dist.recv(tensor=result, src=peer)
+[?2004l[?2004h>     return result
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def train_step_pipeline_afab(model, inputs, targets, device, dtype):
+[?2004l[?2004h>     """Run one all-forward/all-backward pipeline training step.
+[?2004l[?2004h> 
+[?2004l[?2004h>     ``inputs`` and ``targets`` are lists of microbatches.  The function
+[?2004l[?2004h>     performs the forward pass for every microbatch before beginning any
+[?2004l[?2004h>     backward pass.  Gradients are accumulated in the model parameters in the
+[?2004l[?2004h>     usual PyTorch manner; the resulting loss is returned on the last rank and
+[?2004l[?2004h>     ``None`` is returned on other ranks.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+[?2004l[?2004h>     world_size = dist.get_world_size() if dist.is_available() and dist.is_initialized() else 1
+[?2004l[?2004h>     if len(inputs) != len(targets):
+[?2004l[?2004h>         raise ValueError("inputs and targets must contain the same number of microbatches")
+[?2004l[?2004h>     if not inputs:
+[?2004l[?2004h>         raise ValueError("at least one microbatch is required")
+[?2004l[?2004h> 
+[?2004l[?2004h>     llama = model.model
+[?2004l[?2004h>     layers = llama.layers
+[?2004l[?2004h>     num_layers = len(layers)
+[?2004l[?2004h>     first, last = _balanced_range(num_layers, rank, world_size)
+[?2004l[?2004h>     is_first = rank == 0
+[?2004l[?2004h>     is_last = rank == world_size - 1
+[?2004l[?2004h>     n_micro = len(inputs)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Keep position IDs consistent with the normal LlamaModel forward.
+[?2004l[?2004h>     def make_position_ids(x):
+[?2004l[?2004h>         return torch.arange(x.shape[1], device=device, dtype=torch.long).unsqueeze(0).expand(x.shape[0], -1)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # A boundary tensor is deliberately detached before communication.  The
+[?2004l[?2004h>     # receiving side makes it a leaf, and the sender later backpropagates from
+[?2004l[?2004h>     # the gradient sent back across that boundary.
+[?2004l[?2004h>     boundary_outputs = []
+[?2004l[?2004h>     received_inputs = []
+[?2004l[?2004h>     losses = []
+[?2004l[?2004h> 
+[?2004l[?2004h>     # ----------------------------- all forward -----------------------------
+[?2004l[?2004h>     for mb in range(n_micro):
+[?2004l[?2004h>         x = inputs[mb].to(device=device, dtype=torch.long)
+[?2004l[?2004h>         position_ids = make_position_ids(x)
+[?2004l[?2004h> 
+[?2004l[?2004h>         if is_first:
+[?2004l[?2004h>             hidden = llama.embed_tokens(x).to(device=device, dtype=dtype)
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             hidden_size = getattr(getattr(model, "config", None), "hidden_size", None)
+[?2004l[?2004h>             if hidden_size is None:
+[?2004l[?2004h>                 hidden_size = llama.embed_tokens.weight.shape[-1]
+[?2004l[?2004h>             hidden = _recv_like((x.shape[0], x.shape[1], hidden_size), device, dtype, rank - 1)
+[?2004l[?2004h>             hidden.requires_grad_(True)
+[?2004l[?2004h>             received_inputs.append(hidden)
+[?2004l[?2004h> 
+[?2004l[?2004h>         for layer_idx in range(first, last):
+[?2004l[?2004h>             hidden = _layer_forward(layers[layer_idx], hidden, position_ids)
+[?2004l[?2004h>             if hidden.dtype != dtype:
+[?2004l[?2004h>                 hidden = hidden.to(dtype=dtype)
+[?2004l[?2004h> 
+[?2004l[?2004h>         if is_last:
+[?2004l[?2004h>             hidden = llama.norm(hidden)
+[?2004l[?2004h>             logits = model.lm_head(hidden)
+[?2004l[?2004h>             target = targets[mb].to(device=device, dtype=torch.long)
+[?2004l[?2004h>             loss = F.cross_entropy(
+[?2004l[?2004h>                 logits.float().reshape(-1, logits.shape[-1]), target.reshape(-1), reduction="mean"
+[?2004l[?2004h>             ) / n_micro
+[?2004l[?2004h>             losses.append(loss)
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             boundary_outputs.append(hidden)
+[?2004l[?2004h>             _send(hidden.detach().to(device=device, dtype=dtype), rank + 1)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # ---------------------------- all backward -----------------------------
+[?2004l[?2004h>     # Reverse microbatch order is the standard AFAB reverse drain and avoids
+[?2004l[?2004h>     # requiring any additional activation recomputation.
+[?2004l[?2004h>     for mb in range(n_micro - 1, -1, -1):
+[?2004l[?2004h>         if is_last:
+[?2004l[?2004h>             losses[mb].backward()
+[?2004l[?2004h>             if world_size > 1:
+[?2004l[?2004h>                 # The input to the last stage is the received leaf.
+[?2004l[?2004h>                 grad = received_inputs[mb].grad
+[?2004l[?2004h>                 _send(grad.detach().to(device=device, dtype=dtype), rank - 1)
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             grad_shape = boundary_outputs[mb].shape
+[?2004l[?2004h>             grad = _recv_like(grad_shape, device, dtype, rank + 1)
+[?2004l[?2004h>             boundary_outputs[mb].backward(grad)
+[?2004l[?2004h>             if not is_first:
+[?2004l[?2004h>                 input_grad = received_inputs[mb].grad
+[?2004l[?2004h>                 _send(input_grad.detach().to(device=device, dtype=dtype), rank - 1)
+[?2004l[?2004h> 
+[?2004l[?2004h>     if is_last:
+[?2004l[?2004h>         return torch.stack(losses).sum().detach()
+[?2004l[?2004h>     return None
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@0e5bc2664bc4:/app# python3 -m py_compile /app/pipeline_parallel.py
+[?2004l[?2004hroot@0e5bc2664bc4:/app# ls -l /app/pipeline_parallel.py
+[?2004l-rw-r--r-- 1 root root 5976 Oct  3 17:44 /app/pipeline_parallel.py
+[?2004hroot@0e5bc2664bc4:/app# 

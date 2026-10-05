@@ -45,6 +45,128 @@ never past benchmark results.
 
 ---
 
+## 3b. Session log: 5 Oct 2026 — Phase 1 finished, development-set results
+
+### Runs
+- 399 of 405 slots have a result. The 6 missing are pi and mini-swe-agent on `qemu-startup` (their install step
+  fails in that container; 3 attempts each). 453 attempts in total including retries and the 3 set-aside runs.
+- Cost: $8.42 for all runs (of which $0.24 on attempts that broke before grading), $0.66 for the 270 router picks,
+  $0.03 for Luna's harness research. Total about $9.1, about twice the $4 projected (more retries and some long
+  `terminus-2` runs, e.g. `path-tracing` $0.128 and `winning-avg-corewars` $0.107 per run).
+
+### Development set (27 tasks x 3 harnesses x 3 repeats, all complete)
+Baseline = best single harness on the development set = `mini-swe-agent`.
+
+| Strategy | Pass % | vs baseline (95% CI) | Cost | $/pass | Cost/pass vs baseline |
+|---|---|---|---|---|---|
+| always terminus-2 | 60.5 | −1.2 [−11.1, +8.6] | $0.679 | $0.042 | +86% |
+| **always mini-swe-agent** | **61.7** | baseline | $0.373 | $0.022 | 0% |
+| always pi | 54.3 | −7.4 [−21.0, +7.4] | $0.314 | $0.021 | −4% |
+| random | 58.8 | −2.9 [−9.9, +4.5] | $0.455 | $0.029 | +28% |
+| perfect picking | 75.3 | **+13.6 [+4.9, +23.5]** | $0.511 | $0.025 | +12% |
+| router: jev (profiles) | 56.8 | −4.9 [−16.0, +7.4] | $0.546 | $0.036 | +59% |
+| router: luna-profiles | 58.0 | −3.7 [−13.6, +8.6] | $0.404 | $0.026 | +15% |
+| router: luna-cards | 58.0 | −3.7 [−11.1, +1.2] | $0.381 | $0.024 | +9% |
+
+- **Go/no-go: GO.** Perfect picking is 13.6 points over the best single harness, with the CI above 0, so the
+  harness choice does matter on these tasks.
+- **No router captures that headroom.** All three are 3.7–4.9 points *below* always using `mini-swe-agent`, and none
+  meets either success criterion. Jev with profiles is the most expensive (+59% cost per pass), mostly because it
+  picks `pi`/`terminus-2` where `mini-swe-agent` is cheaper.
+- **Noise is high.** Only 50 of 81 task x harness cells give the same result on all 3 repeats. Part of the
+  perfect-picking gap is luck in hindsight; the test set is the real check.
+- Raw table: `study/phase1_results_dev.json`; everything is in `study/ilab_experiments.xlsx` (see below).
+
+### Test set exposure (disclosed)
+When the retry pass ended, `study/run_phase1.sh` printed its old end-of-run summary (`router/outcomes.py`), which
+shows pass rates for **every** task, including the 18 sealed test tasks (mixed with pre-study runs, so not the
+Phase 1 numbers). It was seen in the agent session. No router, profile or pick was changed afterwards: the
+profiles (`571147c38da306ef`) and all 270 picks were frozen on 3–4 Oct. Logged in `study/test_unseal_log.jsonl`.
+The run script now prints only a progress count.
+
+### Experiment export
+`study/export_experiments.py` writes `study/ilab_experiments.xlsx` and `study/ilab_phase1_runs.csv`. Sheets:
+Notes, Phase1 runs (one row per attempt, with tokens, cost, timings, errors and whether it counts), Task x harness,
+Strategies, Router picks (with reasons), Failures (by harness), Older runs (pre-study). Test-set rewards show
+"sealed" until it is run with `--unseal` (logged like the analysis).
+
+## 3a. Session log: 3 Oct 2026
+
+### Jev study withdrawn
+The Jev results in section 3.5 (offline 21 tasks, live 3 tasks, live 5-task pilot) are **withdrawn**. They used
+Jev only as a drop-in replacement for Luna as the picker, with the hand-written cards, which is not the intended
+design. The `routed-jev-*` job folders are kept but excluded from all results.
+
+### New router design: Luna researches the harnesses, Jev picks
+- **Research (once, blind):** `router/harness_research.py` gives Luna the source code of each harness: Harbor's
+  wrappers, plus the mini-swe-agent 2.4.6 (PyPI) and pi 0.85.1 (npm, `@earendil-works/pi-coding-agent`) packages
+  Harbor installs in the container, downloaded to `~/.cache/ilab_harness_src`. That is 120k / 65k / 147k
+  characters. No task names, task text or results. One Luna call per harness, then one call comparing the three.
+  Cost **$0.03**.
+- **Profiles:** `router/harness_profiles.json` (readable copy `router/harness_profiles.md`), frozen on 3 Oct with
+  content hash `571147c38da306ef`. Key differences Luna found in the code:
+  - terminus-2: persistent tmux shell driven by keystrokes; interactive programs and background processes persist;
+    waits capped at 60 s per command batch; 10 KB observations; context summarisation.
+  - mini-swe-agent: each command is a fresh subprocess; **30-second timeout per command** (process group killed);
+    no persistent cwd or variables; no interactive programs; no context compaction.
+  - pi: read / write / exact-edit / grep / find / ls / bash tools; bash has **no default timeout**; can read
+    images; automatic context compaction; no persistent shell.
+  - Two claims were checked against the source: mini-swe-agent `LocalEnvironment.timeout = 30`, and pi bash only
+    times out when a timeout is passed.
+- **Picking:** `router/profile_router.py`. Jev (`typesafe/jev-router`) gets only the frozen profiles plus the task
+  text and returns a harness and reason. No hand-written rules, no default harness; `max_tokens` capped. The
+  profile hash, the underlying model and the cost are logged per pick. Wired into `router.py` as `--router jev`, and
+  `--router luna-profiles` for the comparison.
+- **Picks made before any Phase 1 result was known** (`router/pick_offline.py` -> `router/picks_profiles.json`;
+  45 tasks x 2 repeats):
+
+| Router | terminus-2 | mini-swe-agent | pi | Repeats agree | Routing cost |
+|---|---|---|---|---|---|
+| Jev + profiles | 9 | 14 | 67 | 42/45 tasks | $0.57 (all calls went to GPT-6.1 Sol) |
+| Luna + profiles | 11 | 18 | 61 | 42/45 tasks | $0.07 |
+| Luna + hand-written cards (old router) | 2 | 73 | 15 | – | $0.01 |
+
+  The profiles move both routers from `mini-swe-agent` to `pi`, mainly because of the 30-second command timeout.
+  On the earlier 21 tasks `pi` was the weakest single harness (11.67 vs 13.0), so Phase 1 will show whether the
+  profile-based reasoning holds up. The profiles were not changed after seeing this; they stay frozen.
+
+### Early hint from the old runs (not the study result)
+`study/analyze_phase1.py --jobs-glob 'jobs/*'` scores the 3 Oct picks against the earlier Luna runs (21 development
+tasks with all 3 harnesses, mostly 1 run per cell, includes the withdrawn `routed-jev-*` runs as outcome data):
+
+| Strategy | Pass % | vs terminus-2 (95% CI) | Cost per pass |
+|---|---|---|---|
+| Perfect picking | 75.8 | +15.1 [+2.4, +30.2] | $0.015 |
+| **Jev + profiles** | **65.1** | +4.4 [-10.7, +19.8] | $0.028 |
+| Luna + profiles | 61.9 | +1.2 [-13.1, +15.5] | $0.020 |
+| Always terminus-2 | 60.7 | – | $0.040 |
+| Always mini-swe-agent | 60.3 | -0.4 [-15.1, +14.3] | $0.018 |
+| Luna + cards (old router) | 57.9 | -2.8 [-17.9, +12.7] | $0.020 |
+| Always pi | 55.6 | -5.2 [-25.0, +14.7] | $0.021 |
+
+Jev + profiles is the first router above every single harness on these tasks, but the interval is wide and the
+data are single runs; Phase 1 (3 repeats, unseen test set) decides.
+
+### Phase 1 started (3 Oct, 20:55)
+`study/run_phase1.sh` launched with Luna fixed (405 runs). The first runs finished with rewards, so the pipeline
+works. `study/analyze_phase1.py` scores everything (checked on synthetic data with known answers).
+
+### Issues
+- iCloud has offloaded most of the project again: 11,522 files in `router/.venv`, 217 of 274 `result.json` files
+  in `jobs/`, about 4,600 others. Reads block until each file downloads. New scripts are standard-library only
+  so they don't need the venv. **Set the iLab folder to "Keep Downloaded"** (or move it out of iCloud).
+- The earlier overnight launch with `nohup` from Cursor died within seconds; no results were lost.
+
+### Overnight run, 4–5 Oct
+- Resumed 4 Oct 23:18. The laptop was on battery and went to sleep at 00:46 (1% charge) until it was plugged
+  in at 09:49, so only about 30 slots finished overnight. 342/405 slots had a reward on the morning of 5 Oct.
+- 3 runs were in progress across the 9-hour sleep. They were moved (not deleted) to
+  `jobs_set_aside/slept_2026-10-05/` and those slots are rerun.
+- `qemu-startup` (test set): pi and mini-swe-agent fail every attempt because their own install step
+  (`apt-get install`) fails in that task's container; only terminus-2 runs. **Decided before unsealing: the
+  task is dropped from test-set scoring** (the analysis already drops tasks missing a harness). Report it as
+  a harness reliability note.
+
 ## 3. Session log: 29 Sep 2026
 
 ### 3.1 Router prompt rewrite (`router/router2.py`, reused by `router/router.py`)
@@ -93,8 +215,86 @@ whole experiment about $0.13.
   Job: `jobs/routed-luna-fix-git-newprompt-1790661471/`.
 - Total wall time about 20 min, almost all of it Python startup (see 4.1).
 
-### 3.5 Other code changes
+### 3.5 Jev Router (`typesafe/jev-router` on OpenRouter) as the harness router - WITHDRAWN (see 3a)
+Jev Router is itself a model router: it picks an underlying model and reasoning effort per request. Here it
+replaces Luna as the model that picks the harness (`router.py --router jev`, `prompt_iterations.py --model`).
+It declares no supported parameters (temperature may be ignored) and has variable pricing.
+
+**Offline, 21 tasks** (same method as 3.3, 2 repeats each; picks scored with measured outcomes):
+
+| Prompt | Jev | Luna |
+|---|---|---|
+| P0 original | 12.42 | 12.9 |
+| P1 limits + rules + default | 11.5 | 13.0 |
+| P2 checklist | 12.5 | 13.0 |
+
+- Jev never beat Luna or the best fixed harness (13.0). It picked `pi` more often (6–8 of 21 with P1 vs 3 for Luna).
+- Routing cost $0.016–0.025 per 21 tasks, about 5–7x Luna. Jev sent 93 of 126 calls to DeepSeek v4.1 Flash,
+  26 to GPT-6 Sol, 4 to Gemini 3.8 Flash, 3 to Claude Sonnet 5.5.
+- Raw results: `router/prompt_iterations_results_p0_original_p1_rules_p2_checklist_jev-router.json`.
+
+**Live, 3 tasks where the harness choice matters** (Jev + P1 prompt, executor Luna, 1 run each):
+
+| Task | Measured (t2 / mini / pi) | Jev pick | Result | Exec cost |
+|---|---|---|---|---|
+| count-dataset-tokens | 0 / 0 / 1 | mini-swe-agent | 0.0 | $0.008 |
+| constraints-scheduling | 1 / 1 / 0 | mini-swe-agent | 1.0 | $0.003 |
+| schemelike-metacircular-eval | 0 / 1 / 0 | pi | 0.0 | $0.050 |
+
+Jev live: **1/3**, routing $0.0056 total (3.7–4.9 s per pick). Same 3 tasks, other strategies (expected passes
+from measured outcomes): fixed `mini-swe-agent` 2, Luna P1 2 (picks mini/mini/mini), Luna P2 1, Luna P0 1.5,
+fixed `terminus-2` 1, fixed `pi` 1, oracle 3. Older live Luna routing on these tasks: count-dataset-tokens
+`terminus-2` 0.0, constraints-scheduling `terminus-2` 1.0, schemelike run had no reward (errored).
+
+Conclusion: Jev Router adds cost and variability without better harness picks. Its one distinctive pick
+(`pi` for schemelike-metacircular-eval) was wrong. Not recommended as the harness router.
+
+**Live pilot, 5 tasks** (Phase 0 of `STUDY_PLAN.md`; Jev + current prompt picks, Luna executes, 1 run each,
+jobs `routed-jev-*-jevpilot5-*`). The tasks are the 5 from the 8-task pilot where harnesses differ.
+
+| Task | Measured mean (t2 / mini / pi) | Jev pick | Result | Exec cost | Old Luna router pick (result) |
+|---|---|---|---|---|---|
+| build-cython-ext | 1 / 0 / 1 | mini-swe-agent | 0.0 | $0.016 | mini-swe-agent (0) |
+| constraints-scheduling | 1 / 1 / 0 | mini-swe-agent | 1.0 | $0.002 | terminus-2 (1) |
+| count-dataset-tokens | 0 / 0 / 1 | mini-swe-agent | 0.0 | $0.005 | terminus-2 (0) |
+| headless-terminal | 1 / 1 / 0 | pi | 0.0 | $0.013 | mini-swe-agent (1) |
+| winning-avg-corewars | 1 / 0.67 / 0 | mini-swe-agent | 0.0 | $0.036 | mini-swe-agent (1) |
+
+Measured means include these runs (Luna only; terminus-2 and pi have 1–2 runs per task, mini 2–3).
+
+Live: **Jev 1/5**, old live Luna router 3/5. Routing cost for all 5 Jev picks was $0.0025 (2–5 s each).
+
+Scored offline with the measured means (expected passes out of 5, execution cost for 5 tasks):
+
+| Strategy | Expected passes | Cost |
+|---|---|---|
+| Oracle | 5.0 | $0.126 |
+| Always terminus-2 | 4.0 | $0.125 |
+| Random | 2.89 | – |
+| Always mini-swe-agent (= Luna P1 picks, all mini) | 2.67 | $0.060 |
+| Old Luna router live picks | 2.67 | $0.063 |
+| Always pi | 2.0 | $0.085 |
+| **Jev router pilot picks** | **1.67** | $0.064 |
+
+- Jev picked `mini-swe-agent` 4 times and `pi` once; its offline P1 picks on these tasks were the same. So the new
+  prompt mostly collapses Jev and Luna to the default.
+- Its one non-default pick (`pi` for headless-terminal, an interactive terminal task) goes against the prompt's own
+  rule, which says to use terminus-2 for live terminal state.
+- winning-avg-corewars failed on `mini-swe-agent` this time after passing twice: repeat noise of the size that
+  Phase 1 needs 3 repeats to average out.
+- The "always terminus-2 = 4.0" result rests on 1–2 runs per task and on tasks picked because the harnesses
+  differ, so it is not evidence that terminus-2 is best overall (on the 21 tasks it is 12.75 vs mini 13.0).
+
+### 3.6 Other code changes
+- `outcomes.py` and the cost table in `prompt_iterations.py` count only GPT-5.6-Luna runs, because the study holds
+  the executor model fixed. This drops the one-off Qwen, DeepSeek and Mimo runs from early testing; headline numbers
+  are unchanged.
 - `router2.py` imports `langchain_openai` lazily inside `_call`, so its prompts can be imported without the venv.
+- `router.py`: `--router jev` added (`ROUTER_MODELS` maps router name to OpenRouter model); JSON parsing of the
+  router reply now tolerates text around the JSON.
+- `prompt_iterations.py`: `--model` option; results record which underlying model answered.
+- iCloud: reading the offloaded venv files brought them down from 6,776 to about 1,400 still offloaded;
+  `gate_router.py` (needs pandas/scikit-learn) still hung at startup. Keep Downloaded is still needed.
 
 ---
 
@@ -111,6 +311,7 @@ whole experiment about $0.13.
 | `langchain_openai` import broken | Empty `certifi/cacert.pem` in router venv | Reinstalled `certifi` |
 | `git push` hung | `gh` keyring token invalid | Connected GitHub through Cursor; push succeeded (24 Sep) |
 | Docker not running during gate-router test (22 Sep) | Same as above | Unrelated to routing logic |
+| OpenRouter 402 "requires more credits" (29 Sep) | API key close to its credit limit | Top up or raise the key limit before more runs. **Open** |
 
 ### 4.2 Trial-level errors in `jobs/` (123 trials)
 `AgentTimeoutError` 4, `AgentSetupTimeoutError` 2, `ValueError` 2 (missing API key), `BadRequestError` 1,
@@ -169,6 +370,20 @@ not agent mistakes; a router should retry them rather than count them as fails (
 
 ## 7. Next steps
 
+The study design is in `STUDY_PLAN.md` (question, success thresholds, development / test split, phases).
+`python3 study/select_tasks.py` made the split (seed 20260929: 27 development tasks, of which 25 were run before;
+18 test tasks, none run before) and a 405-run queue. Phase 1 finished on 5 Oct (see 3b).
+
+Next:
+1. Decide whether to score the test set now (`python3 study/analyze_phase1.py --split test --unseal`, then
+   `python3 study/export_experiments.py --unseal`). The routers are already frozen.
+2. Given the development result (headroom exists, routers don't find it), consider cost-aware routing or a
+   router that defaults to `mini-swe-agent` and only switches on strong evidence, designed on the development set
+   only.
+3. Run the best router live on the 18 test tasks (3 repeats) to confirm the offline estimate.
+
+Older ideas:
+
 1. Meta-harness: package the router as a single Harbor agent so it can be benchmarked like a harness.
 2. Embedding nearest-neighbour router in `cv_gate.py`, evaluated leave-one-out.
 3. Add cost per pass to `eval_routers.py`; treat cost as a first-class metric.
@@ -181,6 +396,15 @@ not agent mistakes; a router should retry them rather than count them as fails (
 ---
 
 ## 8. Changes since the initial commit (29 Sep 2026)
+
+Pushed in `cb5f685`. Committed locally on 5 Oct (not pushed): the Luna-only filter in `outcomes.py` / `prompt_iterations.py`,
+`STUDY_PLAN.md`, `study/select_tasks.py`, `study/run_phase1.sh`, `study/analyze_phase1.py`,
+`study/phase1_tasks.json`, `study/phase1_queue.txt`, `router/harness_research.py`, `router/harness_profiles.json`
+and `.md`, `router/profile_router.py`, `router/pick_offline.py`, `router/picks_profiles.json`, the profile routers in
+`router/router.py`, Phase 1 jobs (`jobs/p1-*`, plus 3 set-aside runs in `jobs_set_aside/`),
+`study/export_experiments.py` and its outputs, `study/phase1_results_dev.json`, run logs. Withdrawn but kept: 8 `routed-jev-*` jobs and the old Jev results
+JSON.
+
 
 - Modified: `router/router.py`, `router/router2.py`, `router/gate_router.py`, `router/router_log.jsonl`
 - New: `README.md`, `PROJECT_LOG.md`, `router/prompt_iterations.py`, `router/prompt_iterations_results.json`,

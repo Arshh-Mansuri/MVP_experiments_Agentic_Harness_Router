@@ -1,0 +1,115 @@
+Skipping image OS validation for alexgshaw/mcmc-sampling-stan:20251031: docker inspect returned 1
+Installing: tmux, asciinema
+Detected system: {'os': 'debian-based', 'package_manager': 'apt-get', 'update_command': None}
+Installing tools using apt-get: DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tmux asciinema
+Starting recording.
+Sending keys: ['asciinema rec --stdin /logs/agent/recording.cast', 'Enter'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['clear', 'Enter'] min_timeout_sec: 0.0 max_timeout_sec: 180.0
+Sending keys: ["pwd; ls -la; echo '--- data preview ---'; head -5 /app/data.csv 2>/dev/null || true; echo '--- versions ---'; command -v R || true; R --version 2>/dev/null | head -2 || true\n"] min_timeout_sec: 0.2 max_timeout_sec: 180.0
+Sending keys: ['apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y r-base r-base-dev build-essential gfortran libssl-dev libcurl4-openssl-dev libxml2-dev libgit2-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev\n'] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Sending keys: ['Rscript -e \'options(repos=c(CRAN="https://cloud.r-project.org")); if (!requireNamespace("Rcpp", quietly=TRUE)) install.packages("Rcpp"); if (!requireNamespace("RcppEigen", quietly=TRUE)) install.packages("RcppEigen"); if (!requireNamespace("StanHeaders", quietly=TRUE)) install.packages("StanHeaders"); if (!requireNamespace("rstan", quietly=TRUE) || as.character(packageVersion("rstan")) != "2.32.7") install.packages("rstan", version="2.32.7"); cat("rstan version:", as.character(packageVersion("rstan")), "\\n")\'\n'] min_timeout_sec: 60.0 max_timeout_sec: 180.0
+Sending keys: ['cat > /app/hierarchical_model.stan <<\'EOF\'\ndata {\n  int<lower=1> N;\n  array[N] int<lower=0> y;\n  array[N] int<lower=0> n;\n}\nparameters {\n  real<lower=0> alpha;\n  real<lower=0> beta;\n  vector<lower=0, upper=1>[N] theta;\n}\nmodel {\n  // (alpha + beta)^(-5/2), up to a proportionality constant\n  target += -2.5 * log(alpha + beta);\n  theta ~ beta(alpha, beta);\n  y ~ binomial(n, theta);\n}\nEOF\ncat > /app/analysis.R <<\'EOF\'\noptions(mc.cores = parallel::detectCores())\nSys.setenv(LOCAL_CPPFLAGS = "-O2")\nlibrary(rstan)\nrstan_options(auto_write = TRUE)\n\ninput <- read.csv("/app/data.csv", header = TRUE)\nstopifnot(all(c("y", "n") %in% names(input)))\nstan_data <- list(\n  N = nrow(input),\n  y = as.integer(input$y),\n  n = as.integer(input$n)\n)\n\nfit <- sampling(\n  stan_model("/app/hierarchical_model.stan"),\n  data = stan_data,\n  chains = 4,\n  iter = 100000,\n  seed = 1,\n  refresh = 1000,\n  control = list(adapt_delta = 0.9, max_treedepth = 12)\n)\n\ns <- rstan::extract(fit, pars = c("alpha", "beta"), permuted = TRUE)\nwriteLines(sprintf("%.17g", mean(s$alpha)), "/app/posterior_alpha_mean.txt")\nwriteLines(sprintf("%.17g", mean(s$beta)), "/app/posterior_beta_mean.txt")\nEOF\nRscript /app/analysis.R\n'] min_timeout_sec: 60.0 max_timeout_sec: 180.0
+Sending keys: ['ls -lh /app/hierarchical_model.stan /app/analysis.R /app/posterior_alpha_mean.txt /app/posterior_beta_mean.txt; echo alpha=$(cat /app/posterior_alpha_mean.txt); echo beta=$(cat /app/posterior_beta_mean.txt)\n'] min_timeout_sec: 0.2 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: ['Rscript -e \'options(repos=c(CRAN="https://cloud.r-project.org")); pkgs <- c("Rcpp","RcppEigen","StanHeaders","rstan"); miss <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly=TRUE)]; if (length(miss)) install.packages(miss, dependencies=TRUE); cat("rstan:", as.character(packageVersion("rstan")), "\\n"); stopifnot(as.character(packageVersion("rstan")) == "2.32.7")\'\n'] min_timeout_sec: 60.0 max_timeout_sec: 180.0
+Sending keys: ['cat > /app/hierarchical_model.stan <<\'EOF\'\ndata {\n  int<lower=1> N;\n  array[N] int<lower=0> y;\n  array[N] int<lower=0> n;\n}\nparameters {\n  real<lower=0> alpha;\n  real<lower=0> beta;\n  vector<lower=0, upper=1>[N] theta;\n}\nmodel {\n  target += -2.5 * log(alpha + beta);\n  theta ~ beta(alpha, beta);\n  y ~ binomial(n, theta);\n}\nEOF\ncat > /app/analysis.R <<\'EOF\'\noptions(mc.cores = parallel::detectCores())\nlibrary(rstan)\nrstan_options(auto_write = TRUE)\n\ninput <- read.csv("/app/data.csv", header = TRUE)\nstopifnot(all(c("y", "n") %in% names(input)))\nstan_data <- list(\n  N = nrow(input),\n  y = as.integer(input$y),\n  n = as.integer(input$n)\n)\n\nmodel <- stan_model(file = "/app/hierarchical_model.stan")\nfit <- sampling(\n  model,\n  data = stan_data,\n  chains = 4,\n  iter = 100000,\n  seed = 1,\n  refresh = 1000,\n  control = list(adapt_delta = 0.9, max_treedepth = 12)\n)\n\nsamples <- rstan::extract(fit, pars = c("alpha", "beta"), permuted = TRUE)\nwriteLines(sprintf("%.17g", mean(samples$alpha)), "/app/posterior_alpha_mean.txt")\nwriteLines(sprintf("%.17g", mean(samples$beta)), "/app/posterior_beta_mean.txt")\nEOF\nls -l /app/hierarchical_model.stan /app/analysis.R\n'] min_timeout_sec: 0.2 max_timeout_sec: 180.0
+Sending keys: ['Rscript /app/analysis.R\n'] min_timeout_sec: 60.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 30.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Sending keys: ['apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y file cmake\n'] min_timeout_sec: 20.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-mcmc-sampling-stan-r1-retry1/mcmc-sampling-stan__N8d7mcu/agent/trajectory.json
+Collecting main service artifacts
+Exception AgentTimeoutError is in exclude_exceptions, not retrying
+Not retrying trial because the exception is not in include_exceptions or the maximum number of retries has been reached

@@ -1,0 +1,158 @@
+[?2004hroot@2231e028452e:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@2231e028452e:/app# clear
+[?2004l[H[J[3J[?2004hroot@2231e028452e:/app# cat > /app/solve_distribution.py <<'PY'
+[?2004l vals * np.log(vals / u))
+    backward = np.sum(counts * u * np.log(u / vals))
+    return np.array([forward, backward])
+
+def residual(x):
+    a, c = masses(x)
+    if a + c >= 1.0:
+        penalty = (a + c - 1.0) * 100.0
+        return np.array([penalty + 100.0, penalty + 100.0])
+    return divergences(x) - TARGET
+
+# Initial guess: approximately 87% mass on one token and a tiny mass
+# spread over half the vocabulary.
+x0 = np.array([np.log(0.87 / 0.13), np.log(4e-5)])
+result = least_squares(
+    residual,
+    x0,
+    xtol=1e-14,
+    ftol=1e-14,
+    gtol=1e-14,
+    max_nfev=5000,
+)
+
+if not result.success or np.max(np.abs(residual(result.x))) > 1e-8:
+    raise RuntimeError(f"Solver failed: {result.message}; residual={residual(result.x)}")
+
+a, c = masses(result.x)
+rem = 1.0 - a - c
+
+dist = np.empty(N, dtype=np.float64)
+dist[0] = a
+dist[1:1 + low_count] = c / low_count
+dist[1 + low_count:] = rem / mid_count
+
+# Final validation.
+if not np.all(np.isfinite(dist)) or np.any(dist <= 0):
+    raise RuntimeError("Distribut[?2004h> import numpy as np
+[?2004lion contains invalid probabilities")
+if abs(dist.sum() - 1.0) > 1e-12:
+    raise RuntimeError(f"Distribution does not normalize: sum={dist.sum()}")
+
+u = 1.0 / N
+forward = float(np.sum(dist * np.log(dist / u)))
+backward = float(np.sum(u * np.log(u / dist)))
+if abs(forward - TARGET) > TOL or abs(backward - TARGET) > TOL:
+    raise RuntimeError(f"KL tolerance failed: forward={forward}, backward={backward}")
+
+np.save('/app/dist.npy', dist)
+print(f"saved /app/dist.npy, shape={dist.shape}, dtype={dist.dtype}")
+print(f"sum={dist.sum():.16f}")
+print(f"forward_KL={forward:.12f}")
+print(f"backward_KL={backward:.12f}")
+print(f"min={dist.min():.16e}, max={dist.max():.16e}")
+PY
+python3 /app/solve_distribution.py
+ls -lh /app/dist.npy
+[?2004h> from scipy.optimize import least_squares
+[?2004l[?2004h> 
+[?2004l[?2004h> N = 150000
+[?2004l[?2004h> TARGET = 10.0
+[?2004l[?2004h> TOL = 0.001
+[?2004l[?2004h> 
+[?2004l[?2004h> # Three groups: one high-probability token, a low-probability half,
+[?2004l[?2004h> # and the remaining ordinary-probability tokens.
+[?2004l[?2004h> low_count = N // 2
+[?2004l[?2004h> mid_count = N - 1 - low_count
+[?2004l[?2004h> 
+[?2004l[?2004h> # Variables are transformed as:
+[?2004l[?2004h> #   a = sigmoid(x[0])          high-token mass
+[?2004l[?2004h> #   c = exp(x[1])               total mass of low-probability group
+[?2004l[?2004h> # The remaining mass belongs to the middle group.
+[?2004l[?2004h> def masses(x):
+[?2004l[?2004h>     a = 1.0 / (1.0 + np.exp(-x[0]))
+[?2004l[?2004h>     c = np.exp(x[1])
+[?2004l[?2004h>     return a, c
+[?2004l[?2004h> 
+[?2004l[?2004h> def divergences(x):
+[?2004l[?2004h>     a, c = masses(x)
+[?2004l[?2004h>     rem = 1.0 - a - c
+[?2004l[?2004h>     if rem <= 0.0:
+[?2004l[?2004h>         return np.array([1e3 + (-rem) * 1e3, 1e3 + (-rem) * 1e3])
+[?2004l[?2004h> 
+[?2004l[?2004h>     p_high = a
+[?2004l[?2004h>     p_low = c / low_count
+[?2004l[?2004h>     p_mid = rem / mid_count
+[?2004l[?2004h>     vals = np.array([p_high, p_low, p_mid])
+[?2004l[?2004h>     counts = np.array([1, low_count, mid_count], dtype=float)
+[?2004l[?2004h>     if np.any(vals <= 0):
+[?2004l[?2004h>         return np.array([1e3, 1e3])
+[?2004l[?2004h> 
+[?2004l[?2004h>     u = 1.0 / N
+[?2004l[?2004h>     forward = np.sum(counts * vals * np.log(vals / u))
+[?2004l[?2004h>     backward = np.sum(counts * u * np.log(u / vals))
+[?2004l[?2004h>     return np.array([forward, backward])
+[?2004l[?2004h> 
+[?2004l[?2004h> def residual(x):
+[?2004l[?2004h>     a, c = masses(x)
+[?2004l[?2004h>     if a + c >= 1.0:
+[?2004l[?2004h>         penalty = (a + c - 1.0) * 100.0
+[?2004l[?2004h>         return np.array([penalty + 100.0, penalty + 100.0])
+[?2004l[?2004h>     return divergences(x) - TARGET
+[?2004l[?2004h> 
+[?2004l[?2004h> # Initial guess: approximately 87% mass on one token and a tiny mass
+[?2004l[?2004h> # spread over half the vocabulary.
+[?2004l[?2004h> x0 = np.array([np.log(0.87 / 0.13), np.log(4e-5)])
+[?2004l[?2004h> result = least_squares(
+[?2004l[?2004h>     residual,
+[?2004l[?2004h>     x0,
+[?2004l[?2004h>     xtol=1e-14,
+[?2004l[?2004h>     ftol=1e-14,
+[?2004l[?2004h>     gtol=1e-14,
+[?2004l[?2004h>     max_nfev=5000,
+[?2004l[?2004h> )
+[?2004l[?2004h> 
+[?2004l[?2004h> if not result.success or np.max(np.abs(residual(result.x))) > 1e-8:
+[?2004l[?2004h>     raise RuntimeError(f"Solver failed: {result.message}; residual={residual(result.x)}")
+[?2004l[?2004h> 
+[?2004l[?2004h> a, c = masses(result.x)
+[?2004l[?2004h> rem = 1.0 - a - c
+[?2004l[?2004h> 
+[?2004l[?2004h> dist = np.empty(N, dtype=np.float64)
+[?2004l[?2004h> dist[0] = a
+[?2004l[?2004h> dist[1:1 + low_count] = c / low_count
+[?2004l[?2004h> dist[1 + low_count:] = rem / mid_count
+[?2004l[?2004h> 
+[?2004l[?2004h> # Final validation.
+[?2004l[?2004h> if not np.all(np.isfinite(dist)) or np.any(dist <= 0):
+[?2004l[?2004h>     raise RuntimeError("Distribution contains invalid probabilities")
+[?2004l[?2004h> if abs(dist.sum() - 1.0) > 1e-12:
+[?2004l[?2004h>     raise RuntimeError(f"Distribution does not normalize: sum={dist.sum()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> u = 1.0 / N
+[?2004l[?2004h> forward = float(np.sum(dist * np.log(dist / u)))
+[?2004l[?2004h> backward = float(np.sum(u * np.log(u / dist)))
+[?2004l[?2004h> if abs(forward - TARGET) > TOL or abs(backward - TARGET) > TOL:
+[?2004l[?2004h>     raise RuntimeError(f"KL tolerance failed: forward={forward}, backward={backward}")
+[?2004l[?2004h> 
+[?2004l[?2004h> np.save('/app/dist.npy', dist)
+[?2004l[?2004h> print(f"saved /app/dist.npy, shape={dist.shape}, dtype={dist.dtype}")
+[?2004l[?2004h> print(f"sum={dist.sum():.16f}")
+[?2004l[?2004h> print(f"forward_KL={forward:.12f}")
+[?2004l[?2004h> print(f"backward_KL={backward:.12f}")
+[?2004l[?2004h> print(f"min={dist.min():.16e}, max={dist.max():.16e}")
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@2231e028452e:/app# python3 /app/solve_distribution.py
+[?2004lsaved /app/dist.npy, shape=(150000,), dtype=float64
+sum=0.9999999999999989
+forward_KL=10.000000000000
+backward_KL=10.000000000000
+min=5.0676439354169058e-14, max=8.6444938049144782e-01
+[?2004hroot@2231e028452e:/app# ls -lh /app/dist.npy
+[?2004l-rw-r--r-- 1 root root 1.2M Oct  3 16:15 /app/dist.npy
+[?2004hroot@2231e028452e:/app# 

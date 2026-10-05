@@ -1,0 +1,79 @@
+[?2004hroot@1785cecedb52:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@1785cecedb52:/app# clear
+[?2004l[H[J[3J[?2004hroot@1785cecedb52:/app# cat > /app/solve_distribution.py <<'PY'
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> from scipy.optimize import least_squares
+[?2004l[?2004h> 
+[?2004l[?2004h> N = 150000
+[?2004l[?2004h> n1, n2, n3 = 1, 20000, N - 1 - 20000
+[?2004l[?2004h> target = 10.0
+[?2004l[?2004h> 
+[?2004l[?2004h> # Stable softmax for the total masses of the three groups.
+[?2004l[?2004h> def masses(x):
+[?2004l[?2004h>     z = np.array([x[0], x[1], 0.0], dtype=float)
+[?2004l[?2004h>     z -= np.max(z)
+[?2004l[?2004h>     e = np.exp(z)
+[?2004l[?2004h>     return e / e.sum()
+[?2004l[?2004h> 
+[?2004l[?2004h> def divergences(x):
+[?2004l[?2004h>     m1, m2, m3 = masses(x)
+[?2004l[?2004h>     counts = np.array([n1, n2, n3], dtype=float)
+[?2004l[?2004h>     probs = np.array([m1 / n1, m2 / n2, m3 / n3], dtype=float)
+[?2004l[?2004h>     # Grouped forms of KL(P||U) and KL(U||P), U(i)=1/N.
+[?2004l[?2004h>     forward = np.sum(np.array([m1, m2, m3]) * np.log(probs * N))
+[?2004l[?2004h>     backward = np.sum((counts / N) * np.log(1.0 / (probs * N)))
+[?2004l[?2004h>     return forward, backward
+[?2004l[?2004h> 
+[?2004l[?2004h> def residual(x):
+[?2004l[?2004h>     f, b = divergences(x)
+[?2004l[?2004h>     return np.array([f - target, b - target])
+[?2004l[?2004h> 
+[?2004l[?2004h> # The initial point has approximately 85% mass on the singleton,
+[?2004l[?2004h> # almost all remaining mass on the medium group, and a tiny low-group mass.
+[?2004l[?2004h> x0 = np.array([10.7, 9.0])
+[?2004l[?2004h> sol = least_squares(residual, x0, xtol=1e-14, ftol=1e-14, gtol=1e-14, max_nfev=5000)
+[?2004l[?2004h> if not sol.success or np.max(np.abs(residual(sol.x))) > 1e-8:
+[?2004l[?2004h>     raise RuntimeError(f'Could not solve KL constraints: {sol.message}; residual={residual(sol.x)}')
+[?2004l[?2004h> 
+[?2004l[?2004h> m1, m2, m3 = masses(sol.x)
+[?2004l[?2004h> dist = np.empty(N, dtype=np.float64)
+[?2004l[?2004h> dist[0] = m1 / n1
+[?2004l[?2004h> dist[1:1+n2] = m2 / n2
+[?2004l[?2004h> dist[1+n2:] = m3 / n3
+[?2004l[?2004h> dist /= dist.sum()
+[?2004l[?2004h> 
+[?2004l[?2004h> # Verify using the full array and save the requested artifact.
+[?2004l[?2004h> uniform = 1.0 / N
+[?2004l[?2004h> forward = np.sum(dist * np.log(dist / uniform))
+[?2004l[?2004h> backward = np.sum(uniform * np.log(uniform / dist))
+[?2004l[?2004h> if abs(dist.sum() - 1.0) > 1e-12 or np.any(dist <= 0):
+[?2004l[?2004h>     raise RuntimeError('Invalid probability distribution')
+[?2004l[?2004h> if abs(forward - target) > 0.001 or abs(backward - target) > 0.001:
+[?2004l[?2004h>     raise RuntimeError(f'KL tolerance failure: forward={forward}, backward={backward}')
+[?2004l[?2004h> 
+[?2004l[?2004h> np.save('/app/dist.npy', dist)
+[?2004l[?2004h> print('saved /app/dist.npy')
+[?2004l[?2004h> print('shape:', dist.shape)
+[?2004l[?2004h> print('sum:', repr(dist.sum()))
+[?2004l[?2004h> print('min:', repr(dist.min()), 'max:', repr(dist.max()))
+[?2004l[?2004h> print('forward KL:', repr(forward))
+[?2004l[?2004h> print('backward KL:', repr(backward))
+[?2004l[?2004h> print('group masses:', m1, m2, m3)
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@1785cecedb52:/app# python3 /app/solve_distribution.py
+[?2004lsaved /app/dist.npy
+shape: (150000,)
+sum: np.float64(1.0)
+min: np.float64(6.375158040831652e-11) max: np.float64(0.8491359252069405)
+forward KL: np.float64(10.000000000000025)
+backward KL: np.float64(9.999999999999998)
+group masses: 0.8491359252069398 0.15085578715135872 8.287641701500732e-06
+[?2004hroot@1785cecedb52:/app# python3 - <<'PY'
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> p = np.load('/app/dist.npy')
+[?2004l[?2004h> print('exists:', p.shape, p.dtype, np.isclose(p.sum(), 1.0))
+[?2004l[?2004h> PY
+[?2004lexists: (150000,) float64 True
+[?2004hroot@1785cecedb52:/app# 

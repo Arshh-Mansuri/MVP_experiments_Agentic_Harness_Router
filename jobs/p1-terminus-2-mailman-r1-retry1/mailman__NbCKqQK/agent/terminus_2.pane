@@ -1,0 +1,1289 @@
+[?2004hroot@4818d1d51dff:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@4818d1d51dff:/app# clear
+[?2004l[H[J[3J[?2004hroot@4818d1d51dff:/app# ls -la /app /etc/mailman3 2>/dev/null; printf '\n--- packages/services ---\n'; dpkg -l | grep -E 'postfix|mailman' || true; systemctl status postfix mailman3 --no-pager 2>&1 | head -80
+[?2004l/app:
+total 16
+drwxr-xr-x 1 root root 4096 Oct 28  2025 [0m[01;34m.[0m
+drwxr-xr-x 1 root root 4096 Oct  4 12:23 [01;34m..[0m
+-rw-r--r-- 1 root root 6099 Oct 24  2025 eval.py
+
+/etc/mailman3:
+total 24
+drwxr-xr-x 2 root root  4096 Oct 28  2025 [01;34m.[0m
+drwxr-xr-x 1 root root  4096 Oct  4 12:23 [01;34m..[0m
+-rw-r----- 1 root list 11115 Oct 28  2025 mailman.cfg
+
+--- packages/services ---
+ii  [01;31m[Kmailman[m[K3                      3.3.8-3.1ubuntu0.1                all          Mailing list management system
+ii  [01;31m[Kpostfix[m[K                       3.8.6-1build2                     amd64        High-performance mail transport agent
+System has not been booted with systemd as init system (PID 1). Can't operate.
+Failed to connect to bus: Host is down
+[?2004hroot@4818d1d51dff:/app# sed -n '1,260p' /app/eval.py
+[?2004limport mailbox
+import os
+import smtplib
+import subprocess
+from email.mime.text import MIMEText
+from functools import partial as bind
+from time import sleep
+
+from mailman.core.initialize import initialize
+from mailman.interfaces.listmanager import IListManager
+from zope.component import getUtility
+
+DOMAIN_NAME = "local.edu"
+MAILING_LIST = "reading-group@local.edu"
+JOIN_LIST = "reading-group-join@local.edu"
+LEAVE_LIST = "reading-group-leave@local.edu"
+MAILING_LIST_CONFIG = "/etc/mailman3/mailman.cfg"
+MLIST = None
+
+##### Helpers #####
+
+
+def retry(func, retries=5, delay=2, backoff=2, exceptions=(Exception,)):
+    """
+    Retry utility for a function call.
+
+    Args:
+        func: function to execute
+        retries: number of retries
+        delay: initial delay in seconds
+        backoff: multiplier for delay (e.g., 2 = exponential backoff)
+        exceptions: exceptions to catch
+
+    Returns:
+        function result
+
+    Raises:
+        Last exception if all retries fail
+    """
+    attempt = 0
+    current_delay = delay
+
+    while attempt < retries:
+        try:
+            return func()
+        except exceptions as e:
+            attempt += 1
+            if attempt == retries:
+                raise e
+            print(f"Retrying in {current_delay} seconds...")
+            sleep(current_delay)
+            current_delay *= backoff
+
+
+def add_user(username):
+    """Dynamically add users to the system to prevent hard-coding."""
+    try:
+        subprocess.run(
+            ["useradd", username],
+            check=True,  # raises exception if returncode != 0
+            capture_output=True,
+            text=True,
+        )
+        print(f"{username} added successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to add {username}. Error: {e.stderr.strip()}")
+        raise
+
+
+def get_mlist():
+    """Helper function to get the mailing list."""
+    global MLIST
+    if MLIST is None:
+        initialize(MAILING_LIST_CONFIG)
+        list_manager = getUtility(IListManager)
+        MLIST = list_manager.get(MAILING_LIST)
+    return MLIST
+
+
+def send_email(*, body, subject, from_addr, to_addr):
+    """Helper function to send an email."""
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = to_addr
+    with smtplib.SMTP("localhost", 25) as server:
+        server.send_message(msg)
+
+
+def _debug_print_msg(msg):
+    """Helper function to print email message details."""
+    print("Message details:")
+    print(f"  From: {msg.get('From', 'No From')}")
+    print(f"  To: {msg.get('To', 'No To')}")
+    print(f"  Subject: {msg.get('Subject', 'No Subject')}")
+    print(f"  Body: {msg.get_payload()[:500]}...")
+
+
+def confirm_last_reply(user, subject_contains=""):
+    """Mock user confirmation behavior when they join or leave
+    the mailing list."""
+    mbox_path = f"/var/mail/{user}"
+    mbox = mailbox.mbox(mbox_path)
+    print(f"{user} has {len(mbox)} messages in their inbox")
+    print("the subjects are as follows:")
+    print([msg.get("Subject", "") for msg in mbox])
+    candidate_msgs = [
+        msg
+        for msg in mbox
+        if msg.get("From").startswith("reading-group-confirm")
+        and subject_contains in msg.get("Subject", "")
+    ]
+    print(f"Found {len(candidate_msgs)} candidate confirmation messages")
+    assert candidate_msgs, "No 'reading-group-confirm' messages found"
+
+    confirmation_msg = candidate_msgs[-1]  # get the last one
+    _debug_print_msg(confirmation_msg)
+    confirmation_from = confirmation_msg.get("From")
+    send_email(
+        body="",
+        subject="",
+        from_addr=f"{user}@{DOMAIN_NAME}",
+        to_addr=confirmation_from,
+    )
+    print(
+        f"Reply to {confirmation_from} from {user}@{DOMAIN_NAME} for {subject_contains}"
+    )
+
+
+##### Tests #####
+
+
+def test_simple_local_delivery():
+    """Test that postfix can deliver mail to local users
+    and that the email content is accessible in their local mailboxes.
+    """
+    user = os.urandom(8).hex()
+    add_user(user)
+    mbox_path = f"/var/mail/{user}"
+    subject = "Direct Message"
+    send_email(
+        from_addr=f"tester@{DOMAIN_NAME}",
+        to_addr=f"{user}@{DOMAIN_NAME}",
+        subject=subject,
+        body="Direct test message",
+    )
+
+    def _assert_mailbox_exists():
+        assert os.path.exists(mbox_path), f"Mailbox not found: {mbox_path}"
+
+    def _assert_receipt():
+        mbox = mailbox.mbox(mbox_path)
+        found = any(email_msg.get("Subject", "") == subject for email_msg in mbox)
+        assert found, f"Direct email not found in {mbox_path}"
+
+    retry(_assert_mailbox_exists)
+    retry(_assert_receipt)
+    print(f"Direct delivery to {user} works: {subject}")
+
+
+def test_mlist_exists():
+    """Test that the mailman mailing list exists."""
+    mlist = get_mlist()
+    assert mlist, "Mailing list does not exist"
+
+
+def test_join_flow():
+    """Full flow of user joining, announcing, and leaving the mailing list."""
+    user = os.urandom(8).hex()
+    add_user(user)
+    mbox_path = f"/var/mail/{user}"
+
+    def _assert_mailbox_exists():
+        assert os.path.exists(mbox_path), f"Mailbox not found: {mbox_path}"
+
+    def _assert_not_member():
+        mlist = get_mlist()
+        user_member = mlist.members.get_member(f"{user}@{DOMAIN_NAME}")
+        assert user_member is None, f"{user} is a member: {user_member=}"
+
+    def _assert_member():
+        mlist = get_mlist()
+        user_member = mlist.members.get_member(f"{user}@{DOMAIN_NAME}")
+        assert user_member, f"{user} is not a member: {user_member=}"
+
+    send_email(
+        body="",
+        subject="",
+        from_addr=f"{user}@{DOMAIN_NAME}",
+        to_addr=JOIN_LIST,
+    )
+    print(f"{user} sends a join request")
+    retry(_assert_not_member)
+    print(f"{user} has not yet confirmed their subscription")
+
+    retry(_assert_mailbox_exists)
+    retry(bind(confirm_last_reply, user, "join"))
+    retry(_assert_member)
+    print(f"{user} has confirmed their subscription")
+
+
+if __name__ == "__main__":
+    test_simple_local_delivery()
+    test_mlist_exists()
+    test_join_flow()
+[?2004hroot@4818d1d51dff:/app# printf '\n--- mailman cfg ---\n'
+[?2004l
+--- mailman cfg ---
+[?2004hroot@4818d1d51dff:/app# sed -n '1,260p' /etc/mailman3/mailman.cfg
+[?2004l# Copyright (C) 2008-2017 by the Free Software Foundation, Inc.
+#
+# This file is part of GNU Mailman.
+#
+# GNU Mailman is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option)
+# any later version.
+#
+# GNU Mailman is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# GNU Mailman.  If not, see <http://www.gnu.org/licenses/>.
+
+# This file contains the Debian configuration for mailman.  It uses ini-style
+# formats under the lazr.config regime to define all system configuration
+# options.  See <https://launchpad.net/lazr.config> for details.
+
+
+[mailman]
+# This address is the "site owner" address.  Certain messages which must be
+# delivered to a human, but which can't be delivered to a list owner (e.g. a
+# bounce from a list owner), will be sent to this address.  It should point to
+# a human.
+site_owner: changeme@example.com
+
+# This is the local-part of an email address used in the From field whenever a
+# message comes from some entity to which there is no natural reply recipient.
+# Mailman will append '@' and the host name of the list involved.  This
+# address must not bounce and it must not point to a Mailman process.
+noreply_address: noreply
+
+# The default language for this server.
+default_language: en
+
+# Membership tests for posting purposes are usually performed by looking at a
+# set of headers, passing the test if any of their values match a member of
+# the list.  Headers are checked in the order given in this variable.  The
+# value From_ means to use the envelope sender.  Field names are case
+# insensitive.  This is a space separate list of headers.
+sender_headers: from from_ reply-to sender
+
+# Mail command processor will ignore mail command lines after designated max.
+email_commands_max_lines: 10
+
+# Default length of time a pending request is live before it is evicted from
+# the pending database.
+pending_request_life: 3d
+
+# How long should files be saved before they are evicted from the cache?
+cache_life: 7d
+
+# A callable to run with no arguments early in the initialization process.
+# This runs before database initialization.
+pre_hook:
+
+# A callable to run with no arguments late in the initialization process.
+# This runs after adapters are initialized.
+post_hook:
+
+# Which paths.* file system layout to use.
+# You should not change this variable.
+layout: debian
+
+# Can MIME filtered messages be preserved by list owners?
+filtered_messages_are_preservable: no
+
+# How should text/html parts be converted to text/plain when the mailing list
+# is set to convert HTML to plaintext?  This names a command to be called,
+# where the substitution variable $filename is filled in by Mailman, and
+# contains the path to the temporary file that the command should read from.
+# The command should print the converted text to stdout.
+html_to_plain_text_command: /usr/bin/lynx -dump $filename
+
+# Specify what characters are allowed in list names.  Characters outside of
+# the class [-_.+=!$*{}~0-9a-z] matched case insensitively are never allowed,
+# but this specifies a subset as the only allowable characters.  This must be
+# a valid character class regexp or the effect on list creation is
+# unpredictable.
+listname_chars: [-_.0-9a-z]
+
+
+[shell]
+# `mailman shell` (also `withlist`) gives you an interactive prompt that you
+# can use to interact with an initialized and configured Mailman system.  Use
+# --help for more information.  This section allows you to configure certain
+# aspects of this interactive shell.
+
+# Customize the interpreter prompt.
+prompt: >>>
+
+# Banner to show on startup.
+banner: Welcome to the GNU Mailman shell
+
+# Use IPython as the shell, which must be found on the system.  Valid values
+# are `no`, `yes`, and `debug` where the latter is equivalent to `yes` except
+# that any import errors will be displayed to stderr.
+use_ipython: no
+
+# Set this to allow for command line history if readline is available.  This
+# can be as simple as $var_dir/history.py to put the file in the var directory.
+history_file:
+
+
+[paths.debian]
+# Important directories for Mailman operation.  These are defined here so that
+# different layouts can be supported.   For example, a developer layout would
+# be different from a FHS layout.  Most paths are based off the var_dir, and
+# often just setting that will do the right thing for all the other paths.
+# You might also have to set spool_dir though.
+#
+# Substitutions are allowed, but must be of the form $var where 'var' names a
+# configuration variable in the paths.* section.  Substitutions are expanded
+# recursively until no more $-variables are present.  Beware of infinite
+# expansion loops!
+#
+# This is the root of the directory structure that Mailman will use to store
+# its run-time data.
+var_dir: /var/lib/mailman3
+# This is where the Mailman queue files directories will be created.
+queue_dir: $var_dir/queue
+# This is the directory containing the Mailman 'runner' and 'master' commands
+# if set to the string '$argv', it will be taken as the directory containing
+# the 'mailman' command.
+bin_dir: /usr/lib/mailman3/bin
+# All list-specific data.
+list_data_dir: $var_dir/lists
+# Directory where log files go.
+log_dir: /var/log/mailman3
+# Directory for system-wide locks.
+lock_dir: $var_dir/locks
+# Directory for system-wide data.
+data_dir: $var_dir/data
+# Cache files.
+cache_dir: $var_dir/cache
+# Directory for configuration files and such.
+etc_dir: /etc/mailman3
+# Directory containing Mailman plugins.
+ext_dir: $var_dir/ext
+# Directory where the default IMessageStore puts its messages.
+messages_dir: $var_dir/messages
+# Directory for archive backends to store their messages in.  Archivers should
+# create a subdirectory in here to store their files.
+archive_dir: $var_dir/archives
+# Root directory for site-specific template override files.
+template_dir: $var_dir/templates
+# There are also a number of paths to specific file locations that can be
+# defined.  For these, the directory containing the file must already exist,
+# or be one of the directories created by Mailman as per above.
+#
+# This is where PID file for the master runner is stored.
+pid_file: /run/mailman3/master.pid
+# Lock file.
+lock_file: $lock_dir/master.lck
+
+
+[database]
+# The class implementing the IDatabase.
+class: mailman.database.sqlite.SQLiteDatabase
+#class: mailman.database.mysql.MySQLDatabase
+#class: mailman.database.postgresql.PostgreSQLDatabase
+
+# Use this to set the Storm database engine URL.  You generally have one
+# primary database connection for all of Mailman.  List data and most rosters
+# will store their data in this database, although external rosters may access
+# other databases in their own way.  This string supports standard
+# 'configuration' substitutions.
+url: sqlite:///$DATA_DIR/mailman.db
+#url: mysql+pymysql://mailman3:mmpass@localhost/mailman3?charset=utf8&use_unicode=1
+#url: postgresql://mailman3:mmpass@localhost/mailman3
+
+debug: no
+
+
+[logging.debian]
+# This defines various log settings.  The options available are:
+#
+# - level     -- Overrides the default level; this may be any of the
+#                standard Python logging levels, case insensitive.
+# - format    -- Overrides the default format string
+# - datefmt   -- Overrides the default date format string
+# - path      -- Overrides the default logger path.  This may be a relative
+#                path name, in which case it is relative to Mailman's LOG_DIR,
+#                or it may be an absolute path name.  You cannot change the
+#                handler class that will be used.
+# - propagate -- Boolean specifying whether to propagate log message from this
+#                logger to the root "mailman" logger.  You cannot override
+#                settings for the root logger.
+#
+# In this section, you can define defaults for all loggers, which will be
+# prefixed by 'mailman.'.  Use subsections to override settings for specific
+# loggers.  The names of the available loggers are:
+#
+# - archiver        --  All archiver output
+# - bounce          --  All bounce processing logs go here
+# - config          --  Configuration issues
+# - database        --  Database logging (SQLAlchemy and Alembic)
+# - debug           --  Only used for development
+# - error           --  All exceptions go to this log
+# - fromusenet      --  Information related to the Usenet to Mailman gateway
+# - http            --  Internal wsgi-based web interface
+# - locks           --  Lock state changes
+# - mischief        --  Various types of hostile activity
+# - runner          --  Runner process start/stops
+# - smtp            --  Successful SMTP activity
+# - smtp-failure    --  Unsuccessful SMTP activity
+# - subscribe       --  Information about leaves/joins
+# - vette           --  Message vetting information
+format: %(asctime)s (%(process)d) %(message)s
+datefmt: %b %d %H:%M:%S %Y
+propagate: no
+level: info
+path: mailman.log
+
+[webservice]
+# The hostname at which admin web service resources are exposed.
+hostname: localhost
+
+# The port at which the admin web service resources are exposed.
+port: 8001
+
+# Whether or not requests to the web service are secured through SSL.
+use_https: no
+
+# Whether or not to show tracebacks in an HTTP response for a request that
+# raised an exception.
+show_tracebacks: yes
+
+# The API version number for the current (highest) API.
+api_version: 3.1
+
+# The administrative username.
+admin_user: restadmin
+
+# The administrative password.
+admin_pass: /927xNm2R4ujpPS+RrCMityUwNb+E+LUW0DhJdpGuGu7xl9i
+
+[mta]
+# The class defining the interface to the incoming mail transport agent.
+#incoming: mailman.mta.exim4.LMTP
+incoming: mailman.mta.postfix.LMTP
+
+# The callable implementing delivery to the outgoing mail transport agent.
+# This must accept three arguments, the mailing list, the message, and the
+# message metadata dictionary.
+outgoing: mailman.mta.deliver.deliver
+
+# How to connect to the outgoing MTA.  If smtp_user and smtp_pass is given,
+# then Mailman will attempt to log into the MTA when making a new connection.
+smtp_host: localhost
+smtp_port: 25
+smtp_user:
+smtp_pass:
+
+# Where the LMTP server listens for connections.  Use 127.0.0.1 instead of
+# localhost for Postfix integration, because Postfix only consults DNS
+# (e.g. not /etc/hosts).
+[?2004hroot@4818d1d51dff:/app# printf '\n--- postfix config ---\n'
+[?2004l
+--- postfix config ---
+[?2004hroot@4818d1d51dff:/app# postconf -n 2>/dev/null || true
+[?2004lalias_database = hash:/etc/aliases
+alias_maps = hash:/etc/aliases
+append_dot_mydomain = no
+biff = no
+compatibility_level = 3.6
+inet_interfaces = all
+inet_protocols = all
+mailbox_size_limit = 0
+mydestination = $myhostname, localhost, localhost.localdomain, , localhost
+myhostname = localhost.local
+mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
+readme_directory = no
+recipient_delimiter = +
+relayhost =
+smtp_tls_CApath = /etc/ssl/certs
+smtp_tls_security_level = may
+smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+smtpd_banner = $myhostname ESMTP $mail_name (Ubuntu)
+smtpd_relay_restrictions = permit_mynetworks permit_sasl_authenticated defer_unauth_destination
+smtpd_tls_cert_file = /etc/ssl/certs/ssl-cert-snakeoil.pem
+smtpd_tls_key_file = /etc/ssl/private/ssl-cert-snakeoil.key
+smtpd_tls_security_level = may
+[?2004hroot@4818d1d51dff:/app# printf '\n--- mailman commands ---\n'
+[?2004l
+--- mailman commands ---
+[?2004hroot@4818d1d51dff:/app# command -v mailman || true
+[?2004l/usr/bin/mailman
+[?2004hroot@4818d1d51dff:/app# mailman --help 2>&1 | head -80 || true
+[?2004lUsage: mailman [OPTIONS] COMMAND [ARGS]...
+
+  The GNU Mailman mailing list management system Copyright 1998-2018 by the
+  Free Software Foundation, Inc. http://www.list.org
+
+Options:
+  --version          Show the version and exit.
+  --run-as-root      Running mailman commands as root is not recommended and
+                     mailman will refuse to run as root unless this option is
+                     specified.
+  -C, --config FILE  Configuration file to use.  If not given, the environment
+                     variable MAILMAN_CONFIG_FILE is consulted and used if
+                     set.  If neither are given, a default configuration file
+                     is loaded.
+  -h, --help         Show this message and exit.
+
+Commands:
+  addmembers     Add all member addresses in FILENAME with delivery mode...
+  aliases        Regenerate the aliases appropriate for your MTA.
+  changeaddress  Change a user's email address from old_address to...
+  conf           Print the Mailman configuration.
+  create         Create a mailing list.
+  delmembers     Delete members from a mailing list.
+  digests        Operate on digests.
+  findmember     Display all memberships for a user or users with address...
+  gatenews       Poll the NNTP server for messages to be gatewayed to...
+  help           Show this help message and exit.
+  import21       Import Mailman 2.1 list data.
+  info           Information about this Mailman instance.
+  inject         Inject a message from a file into a mailing list's queue.
+  lists          List all mailing lists.
+  members        Display a mailing list's members.
+  notify         Notify list owners/moderators of pending requests.
+  qfile          Get information out of a queue file.
+  remove         Remove a mailing list.
+  reopen         Signal the Mailman processes to re-open their log files.
+  restart        Stop and restart the Mailman runner subprocesses.
+  shell          Operate on a mailing list.
+  start          Start the Mailman master and runner processes.
+  status         Show the current running status of the Mailman system.
+  stop           Stop the Mailman master and runner processes.
+  syncmembers    Add and delete members as necessary to syncronize a...
+  unshunt        Unshunt messages.
+  version        Display Mailman's version.
+  withlist       Operate on a mailing list.
+[?2004hroot@4818d1d51dff:/app# printf '\n--- users/processes ---\n'
+[?2004l
+--- users/processes ---
+[?2004hroot@4818d1d51dff:/app# id mailman 2>/dev/null || true
+[?2004l[?2004hroot@4818d1d51dff:/app# ps aux | grep -E '[m]ailman|[p]ostfix' || true
+[?2004l[?2004hroot@4818d1d51dff:/app# sed -n '100,280p' /app/eval.py
+[?2004l    """Mock user confirmation behavior when they join or leave
+    the mailing list."""
+    mbox_path = f"/var/mail/{user}"
+    mbox = mailbox.mbox(mbox_path)
+    print(f"{user} has {len(mbox)} messages in their inbox")
+    print("the subjects are as follows:")
+    print([msg.get("Subject", "") for msg in mbox])
+    candidate_msgs = [
+        msg
+        for msg in mbox
+        if msg.get("From").startswith("reading-group-confirm")
+        and subject_contains in msg.get("Subject", "")
+    ]
+    print(f"Found {len(candidate_msgs)} candidate confirmation messages")
+    assert candidate_msgs, "No 'reading-group-confirm' messages found"
+
+    confirmation_msg = candidate_msgs[-1]  # get the last one
+    _debug_print_msg(confirmation_msg)
+    confirmation_from = confirmation_msg.get("From")
+    send_email(
+        body="",
+        subject="",
+        from_addr=f"{user}@{DOMAIN_NAME}",
+        to_addr=confirmation_from,
+    )
+    print(
+        f"Reply to {confirmation_from} from {user}@{DOMAIN_NAME} for {subject_contains}"
+    )
+
+
+##### Tests #####
+
+
+def test_simple_local_delivery():
+    """Test that postfix can deliver mail to local users
+    and that the email content is accessible in their local mailboxes.
+    """
+    user = os.urandom(8).hex()
+    add_user(user)
+    mbox_path = f"/var/mail/{user}"
+    subject = "Direct Message"
+    send_email(
+        from_addr=f"tester@{DOMAIN_NAME}",
+        to_addr=f"{user}@{DOMAIN_NAME}",
+        subject=subject,
+        body="Direct test message",
+    )
+
+    def _assert_mailbox_exists():
+        assert os.path.exists(mbox_path), f"Mailbox not found: {mbox_path}"
+
+    def _assert_receipt():
+        mbox = mailbox.mbox(mbox_path)
+        found = any(email_msg.get("Subject", "") == subject for email_msg in mbox)
+        assert found, f"Direct email not found in {mbox_path}"
+
+    retry(_assert_mailbox_exists)
+    retry(_assert_receipt)
+    print(f"Direct delivery to {user} works: {subject}")
+
+
+def test_mlist_exists():
+    """Test that the mailman mailing list exists."""
+    mlist = get_mlist()
+    assert mlist, "Mailing list does not exist"
+
+
+def test_join_flow():
+    """Full flow of user joining, announcing, and leaving the mailing list."""
+    user = os.urandom(8).hex()
+    add_user(user)
+    mbox_path = f"/var/mail/{user}"
+
+    def _assert_mailbox_exists():
+        assert os.path.exists(mbox_path), f"Mailbox not found: {mbox_path}"
+
+    def _assert_not_member():
+        mlist = get_mlist()
+        user_member = mlist.members.get_member(f"{user}@{DOMAIN_NAME}")
+        assert user_member is None, f"{user} is a member: {user_member=}"
+
+    def _assert_member():
+        mlist = get_mlist()
+        user_member = mlist.members.get_member(f"{user}@{DOMAIN_NAME}")
+        assert user_member, f"{user} is not a member: {user_member=}"
+
+    send_email(
+        body="",
+        subject="",
+        from_addr=f"{user}@{DOMAIN_NAME}",
+        to_addr=JOIN_LIST,
+    )
+    print(f"{user} sends a join request")
+    retry(_assert_not_member)
+    print(f"{user} has not yet confirmed their subscription")
+
+    retry(_assert_mailbox_exists)
+    retry(bind(confirm_last_reply, user, "join"))
+    retry(_assert_member)
+    print(f"{user} has confirmed their subscription")
+
+
+if __name__ == "__main__":
+    test_simple_local_delivery()
+    test_mlist_exists()
+    test_join_flow()
+[?2004hroot@4818d1d51dff:/app# printf '\n--- cfg sections ---\n'
+[?2004l
+--- cfg sections ---
+[?2004hroot@4818d1d51dff:/app# grep -nE '^\[|^(var_dir|queue_dir|log_dir|lock_dir|data_dir|configuration|incoming|outgoing|smtp_host|smtp_port|runner)' /etc/mailman3/mailman.cfg
+[?2004l[32m[K23[m[K[36m[K:[m[K[01;31m[K[[m[Kmailman]
+[32m[K86[m[K[36m[K:[m[K[01;31m[K[[m[Kshell]
+[32m[K108[m[K[36m[K:[m[K[01;31m[K[[m[Kpaths.debian]
+[32m[K122[m[K[36m[K:[m[K[01;31m[Kvar_dir[m[K: /var/lib/mailman3
+[32m[K124[m[K[36m[K:[m[K[01;31m[Kqueue_dir[m[K: $var_dir/queue
+[32m[K132[m[K[36m[K:[m[K[01;31m[Klog_dir[m[K: /var/log/mailman3
+[32m[K134[m[K[36m[K:[m[K[01;31m[Klock_dir[m[K: $var_dir/locks
+[32m[K136[m[K[36m[K:[m[K[01;31m[Kdata_dir[m[K: $var_dir/data
+[32m[K160[m[K[36m[K:[m[K[01;31m[K[[m[Kdatabase]
+[32m[K178[m[K[36m[K:[m[K[01;31m[K[[m[Klogging.debian]
+[32m[K218[m[K[36m[K:[m[K[01;31m[K[[m[Kwebservice]
+[32m[K241[m[K[36m[K:[m[K[01;31m[K[[m[Kmta]
+[32m[K244[m[K[36m[K:[m[K[01;31m[Kincoming[m[K: mailman.mta.postfix.LMTP
+[32m[K249[m[K[36m[K:[m[K[01;31m[Koutgoing[m[K: mailman.mta.deliver.deliver
+[32m[K253[m[K[36m[K:[m[K[01;31m[Ksmtp_host[m[K: localhost
+[32m[K254[m[K[36m[K:[m[K[01;31m[Ksmtp_port[m[K: 25
+[32m[K271[m[K[36m[K:[m[K[01;31m[Kconfiguration[m[K: python:mailman.config.postfix
+[?2004hroot@4818d1d51dff:/app# printf '\n--- package startup files ---\n'
+[?2004l
+--- package startup files ---
+[?2004hroot@4818d1d51dff:/app# dpkg -L mailman3 | grep -E '(systemd|init.d|bin/mailman|postfix|transport|alias)' | head -100
+[?2004l/etc/init.d
+/etc/init.d/mailman3
+/usr/bin/mailman-wrapper
+/usr/lib/mailman3/bin/mailman
+/usr/lib/python3/dist-packages/mailman/bin/mailman.py
+/usr/lib/python3/dist-packages/mailman/commands/cli_aliases.py
+/usr/lib/python3/dist-packages/mailman/config/postfix.cfg
+/usr/lib/python3/dist-packages/mailman/database/alembic/versions/dfe82cf73702_add_alias_domain.py
+/usr/lib/python3/dist-packages/mailman/mta/aliases.py
+/usr/lib/python3/dist-packages/mailman/mta/postfix.py
+/usr/lib/python3/dist-packages/mailman/mta/tests/test_aliases.py
+/usr/lib/systemd
+/usr/lib/systemd/system
+/usr/lib/systemd/system/mailman3.service
+/usr/bin/mailman
+[?2004hroot@4818d1d51dff:/app# printf '\n--- mailman help ---\n'
+[?2004l
+--- mailman help ---
+[?2004hroot@4818d1d51dff:/app# mailman --help 2>&1 | sed -n '1,160p'
+[?2004lUsage: mailman [OPTIONS] COMMAND [ARGS]...
+
+  The GNU Mailman mailing list management system Copyright 1998-2018 by the
+  Free Software Foundation, Inc. http://www.list.org
+
+Options:
+  --version          Show the version and exit.
+  --run-as-root      Running mailman commands as root is not recommended and
+                     mailman will refuse to run as root unless this option is
+                     specified.
+  -C, --config FILE  Configuration file to use.  If not given, the environment
+                     variable MAILMAN_CONFIG_FILE is consulted and used if
+                     set.  If neither are given, a default configuration file
+                     is loaded.
+  -h, --help         Show this message and exit.
+
+Commands:
+  addmembers     Add all member addresses in FILENAME with delivery mode...
+  aliases        Regenerate the aliases appropriate for your MTA.
+  changeaddress  Change a user's email address from old_address to...
+  conf           Print the Mailman configuration.
+  create         Create a mailing list.
+  delmembers     Delete members from a mailing list.
+  digests        Operate on digests.
+  findmember     Display all memberships for a user or users with address...
+  gatenews       Poll the NNTP server for messages to be gatewayed to...
+  help           Show this help message and exit.
+  import21       Import Mailman 2.1 list data.
+  info           Information about this Mailman instance.
+  inject         Inject a message from a file into a mailing list's queue.
+  lists          List all mailing lists.
+  members        Display a mailing list's members.
+  notify         Notify list owners/moderators of pending requests.
+  qfile          Get information out of a queue file.
+  remove         Remove a mailing list.
+  reopen         Signal the Mailman processes to re-open their log files.
+  restart        Stop and restart the Mailman runner subprocesses.
+  shell          Operate on a mailing list.
+  start          Start the Mailman master and runner processes.
+  status         Show the current running status of the Mailman system.
+  stop           Stop the Mailman master and runner processes.
+  syncmembers    Add and delete members as necessary to syncronize a...
+  unshunt        Unshunt messages.
+  version        Display Mailman's version.
+  withlist       Operate on a mailing list.
+[?2004hroot@4818d1d51dff:/app# sed -n '1,240p' /etc/init.d/mailman3
+[?2004l#! /bin/sh
+### BEGIN INIT INFO
+# Provides:          mailman3
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Mailman3 server
+# Description:       Starts and stops the Mailman3 server, used to
+#                    manage mailing lists, queues, and all client queries
+### END INIT INFO
+
+# Do NOT "set -e"
+
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+DESC="Mailman3 program"
+NAME=mailman3
+DAEMON=/usr/bin/mailman
+DAEMON_ARGS="-C /etc/mailman3/mailman.cfg start"
+PIDDIR=/run/mailman3
+PIDFILE=${PIDDIR}/master.pid
+INTERPRETER=python3
+RUNNER=/usr/lib/mailman3/bin/runner
+SCRIPTNAME=/etc/init.d/$NAME
+USER=list
+GROUP=list
+
+# Exit if the package is not installed
+[ -x "$DAEMON" ] || exit 0
+
+[ ! -d ${PIDDIR} ] && (mkdir -p ${PIDDIR} && chown ${USER}:${GROUP} ${PIDDIR})
+
+# Read configuration variable file if it is present
+[ -r $ENVIRONMENTFILE ] && . $ENVIRONMENTFILE
+
+# Load the VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.2-14) to ensure that this file is present
+# and status_of_proc is working.
+. /lib/lsb/init-functions
+
+#
+# Function that starts the daemon/service
+#
+do_start() {
+    # Return
+    #   0 if daemon has been started
+    #   1 if daemon was already running
+    #   2 if daemon could not be started
+    start-stop-daemon --start --quiet --pidfile $PIDFILE --exec "$(which $INTERPRETER)" \
+        --test > /dev/null || return 1
+    start-stop-daemon --start --quiet --pidfile $PIDFILE --chuid ${USER}:${GROUP} \
+        --exec $DAEMON -- $DAEMON_ARGS || return 2
+}
+
+#
+# Function that stops the daemon/service
+#
+do_stop() {
+    # Return
+    #   0 if daemon has been stopped
+    #   1 if daemon was already stopped
+    #   2 if daemon could not be stopped
+    #   other if a failure occurred
+    start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE \
+        --user $USER --name $INTERPRETER
+    RETVAL="$?"
+    [ "$RETVAL" = 2 ] && return 2
+
+    # Wait for children to finish too if this is a daemon that forks
+    # and if the daemon is only ever run from this initscript.
+    # If the above conditions are not satisfied then add some other code
+    # that waits for the process to drop all resources that could be
+    # needed by services started subsequently.  A last resort is to
+    # sleep for some time.
+
+    REMAINING_PIDS=`pgrep -f ${RUNNER}`
+
+    if [ "$REMAINING_PIDS" ]; then
+        for PID in $REMAINING_PIDS; do
+            start-stop-daemon --stop --quiet --oknodo --retry 1 \
+                --pid $PID --user $USER
+        done
+    fi
+
+    # Many daemons don't delete their pidfiles when they exit.
+    rm -f $PIDFILE
+
+    return "$RETVAL"
+}
+
+#
+# Function that sends a SIGHUP to the daemon/service
+#
+do_reload() {
+    #
+    # If the daemon can reload its configuration without
+    # restarting (for example, when it is sent a SIGHUP),
+    # then implement that here.
+    #
+    start-stop-daemon --stop --signal HUP --quiet --pidfile $PIDFILE --name $NAME
+    return 0
+}
+
+case "$1" in
+  start)
+    [ "$VERBOSE" != "no" ] && log_daemon_msg "Starting $DESC" "$NAME"
+    do_start
+    case "$?" in
+      0|1)
+        [ "$VERBOSE" != "no" ] && log_end_msg 0
+        ;;
+      2)
+        [ "$VERBOSE" != "no" ] && log_end_msg 1
+        ;;
+    esac
+    ;;
+  stop)
+    [ "$VERBOSE" != "no" ] && log_daemon_msg "Stopping $DESC" "$NAME"
+    do_stop
+    case "$?" in
+      0|1)
+        [ "$VERBOSE" != "no" ] && log_end_msg 0
+        ;;
+      2)
+        [ "$VERBOSE" != "no" ] && log_end_msg 1
+        ;;
+    esac
+    ;;
+  status)
+    status_of_proc -p $PIDFILE $DAEMON $NAME && exit 0 || exit $?
+    ;;
+  reload|force-reload)
+    log_daemon_msg "Reloading $DESC" "$NAME"
+    do_reload
+    log_end_msg $?
+    ;;
+  restart)
+    log_daemon_msg "Restarting $DESC" "$NAME"
+    do_stop
+    case "$?" in
+      0|1)
+        do_start
+        case "$?" in
+          0)
+            log_end_msg 0
+            ;;
+          1)
+            # Old process is still running
+            log_end_msg 1
+            ;;
+          *)
+            # Failed to start
+            log_end_msg 1
+            ;;
+        esac
+        ;;
+      *)
+        # Failed to stop
+        log_end_msg 1
+        ;;
+    esac
+    ;;
+  *)
+    echo "$SCRIPTNAME {start|stop|restart|reload|force-reload}" >&2
+    exit 3
+    ;;
+esac
+
+exit 0
+[?2004hroot@4818d1d51dff:/app# sed -n '100,180p' /etc/mailman3/mailman.cfg
+[?2004l# that any import errors will be displayed to stderr.
+use_ipython: no
+
+# Set this to allow for command line history if readline is available.  This
+# can be as simple as $var_dir/history.py to put the file in the var directory.
+history_file:
+
+
+[paths.debian]
+# Important directories for Mailman operation.  These are defined here so that
+# different layouts can be supported.   For example, a developer layout would
+# be different from a FHS layout.  Most paths are based off the var_dir, and
+# often just setting that will do the right thing for all the other paths.
+# You might also have to set spool_dir though.
+#
+# Substitutions are allowed, but must be of the form $var where 'var' names a
+# configuration variable in the paths.* section.  Substitutions are expanded
+# recursively until no more $-variables are present.  Beware of infinite
+# expansion loops!
+#
+# This is the root of the directory structure that Mailman will use to store
+# its run-time data.
+var_dir: /var/lib/mailman3
+# This is where the Mailman queue files directories will be created.
+queue_dir: $var_dir/queue
+# This is the directory containing the Mailman 'runner' and 'master' commands
+# if set to the string '$argv', it will be taken as the directory containing
+# the 'mailman' command.
+bin_dir: /usr/lib/mailman3/bin
+# All list-specific data.
+list_data_dir: $var_dir/lists
+# Directory where log files go.
+log_dir: /var/log/mailman3
+# Directory for system-wide locks.
+lock_dir: $var_dir/locks
+# Directory for system-wide data.
+data_dir: $var_dir/data
+# Cache files.
+cache_dir: $var_dir/cache
+# Directory for configuration files and such.
+etc_dir: /etc/mailman3
+# Directory containing Mailman plugins.
+ext_dir: $var_dir/ext
+# Directory where the default IMessageStore puts its messages.
+messages_dir: $var_dir/messages
+# Directory for archive backends to store their messages in.  Archivers should
+# create a subdirectory in here to store their files.
+archive_dir: $var_dir/archives
+# Root directory for site-specific template override files.
+template_dir: $var_dir/templates
+# There are also a number of paths to specific file locations that can be
+# defined.  For these, the directory containing the file must already exist,
+# or be one of the directories created by Mailman as per above.
+#
+# This is where PID file for the master runner is stored.
+pid_file: /run/mailman3/master.pid
+# Lock file.
+lock_file: $lock_dir/master.lck
+
+
+[database]
+# The class implementing the IDatabase.
+class: mailman.database.sqlite.SQLiteDatabase
+#class: mailman.database.mysql.MySQLDatabase
+#class: mailman.database.postgresql.PostgreSQLDatabase
+
+# Use this to set the Storm database engine URL.  You generally have one
+# primary database connection for all of Mailman.  List data and most rosters
+# will store their data in this database, although external rosters may access
+# other databases in their own way.  This string supports standard
+# 'configuration' substitutions.
+url: sqlite:///$DATA_DIR/mailman.db
+#url: mysql+pymysql://mailman3:mmpass@localhost/mailman3?charset=utf8&use_unicode=1
+#url: postgresql://mailman3:mmpass@localhost/mailman3
+
+debug: no
+
+
+[logging.debian]
+# This defines various log settings.  The options available are:
+#
+[?2004hroot@4818d1d51dff:/app# sed -n '240,330p' /etc/mailman3/mailman.cfg
+[?2004l
+[mta]
+# The class defining the interface to the incoming mail transport agent.
+#incoming: mailman.mta.exim4.LMTP
+incoming: mailman.mta.postfix.LMTP
+
+# The callable implementing delivery to the outgoing mail transport agent.
+# This must accept three arguments, the mailing list, the message, and the
+# message metadata dictionary.
+outgoing: mailman.mta.deliver.deliver
+
+# How to connect to the outgoing MTA.  If smtp_user and smtp_pass is given,
+# then Mailman will attempt to log into the MTA when making a new connection.
+smtp_host: localhost
+smtp_port: 25
+smtp_user:
+smtp_pass:
+
+# Where the LMTP server listens for connections.  Use 127.0.0.1 instead of
+# localhost for Postfix integration, because Postfix only consults DNS
+# (e.g. not /etc/hosts).
+lmtp_host: 127.0.0.1
+lmtp_port: 8024
+
+# Where can we find the mail server specific configuration file?  The path can
+# be either a file system path or a Python import path.  If the value starts
+# with python: then it is a Python import path, otherwise it is a file system
+# path.  File system paths must be absolute since no guarantees are made about
+# the current working directory.  Python paths should not include the trailing
+# .cfg, which the file must end with.
+#configuration: python:mailman.config.exim4
+configuration: python:mailman.config.postfix
+[?2004hroot@4818d1d51dff:/app# printf '\n--- postfix integration defaults ---\n'
+[?2004l
+--- postfix integration defaults ---
+[?2004hroot@4818d1d51dff:/app# cat /usr/lib/python3/dist-packages/mailman/config/postfix.cfg
+[?2004l[postfix]
+# Additional configuration variables for the postfix MTA.
+
+# This variable describe the program to use for regenerating the transport map
+# db file, from the associated plain text files.  The file being updated will
+# be appended to this string (with a separating space), so it must be
+# appropriate for os.system().
+postmap_command: /usr/sbin/postmap
+
+# This variable describes the type of transport maps that will be generated by
+# mailman to be used with postfix for LMTP transport. By default, it is set to
+# hash, but mailman also supports `regex` tables.
+transport_file_type: hash
+[?2004hroot@4818d1d51dff:/app# printf '\n--- package users/groups ---\n'
+[?2004l
+--- package users/groups ---
+[?2004hroot@4818d1d51dff:/app# getent passwd mailman list || true
+[?2004llist:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+[?2004hroot@4818d1d51dff:/app# getent group mailman list || true
+[?2004llist:x:38:
+[?2004hroot@4818d1d51dff:/app# set -e
+[?2004l[?2004hroot@4818d1d51dff:/app# mkdir -p /var/lib/mailman3/{data,lists,queue,cache,messages,archives,templates,locks} /var/log/mailman3 /run/mailman3 /var/mail
+[?2004l[?2004hroot@4818d1d51dff:/app# chown -R list:list /var/lib/mailman3 /var/log/mailman3 /run/mailman3 /etc/mailman3
+[?2004l[?2004hroot@4818d1d51dff:/app# chmod 750 /etc/mailman3
+[?2004l[?2004hroot@4818d1d51dff:/app# printf 'create help:\n'
+[?2004lcreate help:
+[?2004hroot@4818d1d51dff:/app# mailman -C /etc/mailman3/mailman.cfg create --help 2>&1 | head -80
+[?2004lUsage: mailman [OPTIONS] COMMAND [ARGS]...
+Try 'mailman -h' for help.
+
+Error: If you are sure you want to run as root, specify --run-as-root.
+set -e
+if ! runuser -u list -- mailman -C /etc/mailman3/mailman.cfg lists 2>/dev/null | grep -q 'reading-group@local.edu'; then
+  runuser -u list -- mailman -C /etc/mailman3/mailman.cfg create --notify=no reading-group@local.edu
+fi
+runuser -u list -- python3 - <<'PY'
+from mailman.core.initialize import initialize
+from mailman.interfaces.listmanager import IListManager
+from mailman.interfaces.mailinglist import SubscriptionPolicy, UnsubscriptionPolicy, PostingPolicy
+from zope.component import getUtility
+from mailman.database.transaction import transaction
+initialize('/etc/mailman3/mailman.cfg')
+mlist = getUtility(IListManager).get('reading-group@local.edu')
+mlist.subscription_policy = SubscriptionPolicy.open
+mlist.unsubscription_policy = UnsubscriptionPolicy.open
+mlist.posting_policy = PostingPolicy.open
+transaction.commit()
+print(mlist.list_id, mlist.subscription_policy, mlist.unsubscription_policy, mlist.posting_policy)
+PY
+runuser -u list -- mailman -C /etc/mailman3/mailman.cfg aliases
+find /var/lib/mailman3 -maxdepth 3 -type f -printf '%p\n' | sort | head -80
+[?2004hroot@4818d1d51dff:/app# printf 'cfg:\n'
+[?2004lcfg:
+[?2004hroot@4818d1d51dff:/app# mailman -C /etc/mailman3/mailman.cfg conf paths 2>&1 | head -80
+[?2004lUsage: mailman [OPTIONS] COMMAND [ARGS]...
+Try 'mailman -h' for help.
+
+Error: If you are sure you want to run as root, specify --run-as-root.
+[?2004hroot@4818d1d51dff:/app# set -e
+[?2004l[?2004hroot@4818d1d51dff:/app# if ! runuser -u list -- mailman -C /etc/mailman3/mailman.cfg lists 2>/dev/null | grep -q 'reading-group@local.edu'; then
+[?2004l[?2004h>   runuser -u list -- mailman -C /etc/mailman3/mailman.cfg create --notify=no reading-group@local.edu
+[?2004l[?2004h> fi
+[?2004lError: Option '--notify' does not take a value.
+[0;32masciinema: recording finished[0m
+[0;32masciinema: asciicast saved to /logs/agent/recording.cast[0m
+set -e
+postconf -e 'myhostname = local.edu'
+postconf -e 'mydomain = local.edu'
+postconf -e 'mydestination = $myhostname, localhost.$mydomain, localhost, local.edu'
+postconf -e 'inet_interfaces = all'
+postconf -e 'inet_protocols = all'
+postconf -e 'local_recipient_maps ='
+postconf -e 'mail_spool_directory = /var/mail/'
+postconf -e 'virtual_alias_maps = hash:/var/lib/mailman3/data/virtual-mailman'
+postconf -e 'transport_maps = hash:/var/lib/mailman3/data/postfix_lmtp'
+postconf -e 'mailbox_command ='
+postmap /var/lib/mailman3/data/virtual-mailman 2>/dev/null || true
+postmap /var/lib/mailman3/data/postfix_lmtp 2>/dev/null || true
+postfix check
+/etc/init.d/mailman3 start
+postfix start
+sleep 2
+ps aux | grep -E '[m]ailman|[p]ostfix'
+postconf -n
+[?2004hroot@4818d1d51dff:/app# set -e
+[?2004l[?2004hroot@4818d1d51dff:/app# postconf -e 'myhostname = local.edu'
+[?2004l[?2004hroot@4818d1d51dff:/app# postconf -e 'mydomain = local.edu'
+[?2004l[?2004hroot@4818d1d51dff:/app# postconf -e 'mydestination = $myhostname, localhost.$mydomain, localhost, local.edu'
+[?2004l[?2004hroot@4818d1d51dff:/app# postconf -e 'inet_interfaces = all'
+[?2004l[?2004hroot@4818d1d51dff:/app# postconf -e 'inet_protocols = all'
+[?2004l[?2004hroot@4818d1d51dff:/app# postconf -e 'local_recipient_maps ='
+[?2004l[?2004hroot@4818d1d51dff:/app# postconf -e 'mail_spool_directory = /var/mail/'
+[?2004l[?2004hroot@4818d1d51dff:/app# postconf -e 'virtual_alias_maps = hash:/var/lib/mailman3/data/virtual-mailman'
+[?2004l[?2004hroot@4818d1d51dff:/app# postconf -e 'transport_maps = hash:/var/lib/mailman3/data/postfix_lmtp'
+[?2004l[?2004hroot@4818d1d51dff:/app# postconf -e 'mailbox_command ='
+[?2004l[?2004hroot@4818d1d51dff:/app# postmap /var/lib/mailman3/data/virtual-mailman 2>/dev/null || true
+[?2004l[?2004hroot@4818d1d51dff:/app# postmap /var/lib/mailman3/data/postfix_lmtp 2>/dev/null || true
+[?2004l[?2004hroot@4818d1d51dff:/app# postfix check
+[?2004lpython3 /app/eval.py[?2004hroot@4818d1d51dff:/app# /etc/init.d/mailman3 start
+[?2004lStarting Mailman's master runner
+Generating MTA alias maps
+[?2004hroot@4818d1d51dff:/app# postfix start
+[?2004lrunuser -u list -- mailman -C /etc/mailman3/mailman.cfg create --help 2>&1 | sed -n '1,120p'
+runuser -u list -- mailman -C /etc/mailman3/mailman.cfg lists 2>&1 || true
+ps aux | grep -E '[m]ailman|[p]ostfix' || true
+set -e
+if ! runuser -u list -- mailman -C /etc/mailman3/mailman.cfg lists 2>/dev/null | grep -q 'reading-group@local.edu'; then
+  printf 'root@local.edu\n' | runuser -u list -- mailman -C /etc/mailman3/mailman.cfg create reading-group@local.edu
+fi
+runuser -u list -- python3 - <<'PY'
+from mailman.core.initialize import initialize
+from mailman.interfaces.listmanager import IListManager
+from mailman.interfaces.mailinglist import SubscriptionPolicy, UnsubscriptionPolicy, PostingPolicy
+from zope.component import getUtility
+from mailman.database.transaction import transaction
+initialize('/etc/mailman3/mailman.cfg')
+mlist = getUtility(IListManager).get('reading-group@local.edu')
+mlist.subscription_policy = SubscriptionPolicy.open
+mlist.unsubscription_policy = UnsubscriptionPolicy.open
+mlist.posting_policy = PostingPolicy.open
+transaction.commit()
+print('configured', mlist.list_id)
+PY
+runuser -u list -- mailman -C /etc/mailman3/mailman.cfg aliases
+find /var/lib/mailman3 -maxdepth 3 -type f \( -name '*postfix*' -o -name '*virtual*' -o -name '*aliases*' \) -ls
+postmap /var/lib/mailman3/data/virtual-mailman 2>/dev/null || true
+postmap /var/lib/mailman3/data/postfix_lmtp 2>/dev/null || true
+postfix reload
+runuser -u list -- mailman -C /etc/mailman3/mailman.cfg restart || /etc/init.d/mailman3 restart
+python3 /app/eval.pypostfix/postfix-script: starting the Postfix mail system
+[?2004hroot@4818d1d51dff:/app# sleep 2
+[?2004l[?2004hroot@4818d1d51dff:/app# ps aux | grep -E '[m]ailman|[p]ostfix'
+[?2004llist         594  1.6  2.2 307364 88632 ?        Ss   12:25   0:00 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/master -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg
+list         622  5.9  2.2 307256 88428 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=archive:0:1
+list         623  6.5  2.2 310032 90376 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=bounces:0:1
+list         624  6.3  2.2 307256 88436 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=command:0:1
+list         625  5.5  2.2 307252 88428 ?        S    12:25   0:02 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=in:0:1
+list         626  6.5  2.2 381144 88612 ?        Sl   12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=lmtp:0:1
+list         627  5.4  2.2 307264 88444 ?        S    12:25   0:02 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=nntp:0:1
+list         628  6.1  2.2 307252 88488 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=out:0:1
+list         629  6.6  2.2 307256 88428 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=pipeline:0:1
+list         630  7.2  2.5 319228 102000 ?       S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=rest:0:1
+list         631  5.8  2.2 307252 88424 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=retry:0:1
+list         632  6.4  2.2 308992 90132 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=task:0:1
+list         634  6.0  2.2 307252 88424 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=virgin:0:1
+list         635  6.1  2.2 307248 88420 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=digest:0:1
+root         734  1.6  0.2 265536  8220 ?        Ss   12:26   0:00 /run/rosetta/rosetta /usr/lib/[01;31m[Kpostfix[m[K/sbin/master /usr/lib/[01;31m[Kpostfix[m[K/sbin/master -w
+list         735  1.2  2.1 319248 87972 ?        S    12:26   0:00 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=rest:0:1
+list         736  0.4  2.1 319252 87976 ?        S    12:26   0:00 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=rest:0:1
+[01;31m[Kpostfix[m[K      737  1.8  0.2 265500 10992 ?        S    12:26   0:00 /run/rosetta/rosetta /usr/lib/[01;31m[Kpostfix[m[K/sbin/pickup pickup -l -t unix -u -c
+[01;31m[Kpostfix[m[K      738  1.8  0.2 265552 11048 ?        S    12:26   0:00 /run/rosetta/rosetta /usr/lib/[01;31m[Kpostfix[m[K/sbin/qmgr qmgr -l -t unix -u
+[?2004hroot@4818d1d51dff:/app# postconf -n
+[?2004lalias_database = hash:/etc/aliases
+alias_maps = hash:/etc/aliases
+append_dot_mydomain = no
+biff = no
+compatibility_level = 3.6
+inet_interfaces = all
+inet_protocols = all
+local_recipient_maps =
+mail_spool_directory = /var/mail/
+mailbox_command =
+mailbox_size_limit = 0
+mydestination = $myhostname, localhost.$mydomain, localhost, local.edu
+mydomain = local.edu
+myhostname = local.edu
+mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
+readme_directory = no
+recipient_delimiter = +
+relayhost =
+smtp_tls_CApath = /etc/ssl/certs
+smtp_tls_security_level = may
+smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+smtpd_banner = $myhostname ESMTP $mail_name (Ubuntu)
+smtpd_relay_restrictions = permit_mynetworks permit_sasl_authenticated defer_unauth_destination
+smtpd_tls_cert_file = /etc/ssl/certs/ssl-cert-snakeoil.pem
+smtpd_tls_key_file = /etc/ssl/private/ssl-cert-snakeoil.key
+smtpd_tls_security_level = may
+transport_maps = hash:/var/lib/mailman3/data/postfix_lmtp
+virtual_alias_maps = hash:/var/lib/mailman3/data/virtual-mailman
+[?2004hroot@4818d1d51dff:/app# python3 /app/eval.pyrunuser -u list -- mailman -C /etc/mailman3/mailman.cfg create --help 2>&1 | sed -n '1,120p'
+[?2004lpython3: can't open file '/app/eval.pyrunuser': [Errno 2] No such file or directory
+[?2004hroot@4818d1d51dff:/app# runuser -u list -- mailman -C /etc/mailman3/mailman.cfg lists 2>&1 || true
+[?2004lNo matching mailing lists found
+[?2004hroot@4818d1d51dff:/app# ps aux | grep -E '[m]ailman|[p]ostfix' || true
+[?2004llist         594  1.6  2.2 307364 88632 ?        Ss   12:25   0:00 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/master -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg
+list         622  5.8  2.2 307256 88428 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=archive:0:1
+list         623  6.3  2.2 310032 90376 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=bounces:0:1
+list         624  6.1  2.2 307256 88436 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=command:0:1
+list         625  5.3  2.2 307252 88428 ?        S    12:25   0:02 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=in:0:1
+list         626  6.3  2.2 381144 88612 ?        Sl   12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=lmtp:0:1
+list         627  5.3  2.2 307264 88444 ?        S    12:25   0:02 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=nntp:0:1
+list         628  5.9  2.2 307252 88488 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=out:0:1
+list         629  6.4  2.2 307256 88428 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=pipeline:0:1
+list         630  7.0  2.5 319228 102000 ?       S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=rest:0:1
+list         631  5.7  2.2 307252 88424 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=retry:0:1
+list         632  6.2  2.2 308992 90132 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=task:0:1
+list         634  5.9  2.2 307252 88424 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=virgin:0:1
+list         635  6.0  2.2 307248 88420 ?        S    12:25   0:03 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=digest:0:1
+root         734  1.0  0.2 265536  8220 ?        Ss   12:26   0:00 /run/rosetta/rosetta /usr/lib/[01;31m[Kpostfix[m[K/sbin/master /usr/lib/[01;31m[Kpostfix[m[K/sbin/master -w
+list         735  0.7  2.1 319248 87972 ?        S    12:26   0:00 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=rest:0:1
+list         736  0.2  2.1 319252 87976 ?        S    12:26   0:00 /run/rosetta/rosetta /usr/bin/python3 /usr/bin/python3 /usr/lib/[01;31m[Kmailman[m[K3/bin/runner -C /etc/[01;31m[Kmailman[m[K3/[01;31m[Kmailman[m[K.cfg --runner=rest:0:1
+[01;31m[Kpostfix[m[K      737  1.1  0.2 265500 10992 ?        S    12:26   0:00 /run/rosetta/rosetta /usr/lib/[01;31m[Kpostfix[m[K/sbin/pickup pickup -l -t unix -u -c
+[01;31m[Kpostfix[m[K      738  1.1  0.2 265552 11048 ?        S    12:26   0:00 /run/rosetta/rosetta /usr/lib/[01;31m[Kpostfix[m[K/sbin/qmgr qmgr -l -t unix -u
+[?2004hroot@4818d1d51dff:/app# set -e
+[?2004l[?2004hroot@4818d1d51dff:/app# if ! runuser -u list -- mailman -C /etc/mailman3/mailman.cfg lists 2>/dev/null | grep -q 'reading-group@local.edu'; then
+[?2004l[?2004h>   printf 'root@local.edu\n' | runuser -u list -- mailman -C /etc/mailman3/mailman.cfg create reading-group@local.edu
+[?2004l[?2004h> fi
+[?2004lCreated mailing list: reading-group@local.edu
+[?2004hroot@4818d1d51dff:/app# runuser -u list -- python3 - <<'PY'
+[?2004l[?2004h> from mailman.core.initialize import initialize
+[?2004l[?2004h> from mailman.interfaces.listmanager import IListManager
+[?2004l[?2004h> from mailman.interfaces.mailinglist import SubscriptionPolicy, UnsubscriptionPolicy, PostingPolicy
+[?2004l[?2004h> from zope.component import getUtility
+[?2004l[?2004h> from mailman.database.transaction import transaction
+[?2004l[?2004h> initialize('/etc/mailman3/mailman.cfg')
+[?2004l[?2004h> mlist = getUtility(IListManager).get('reading-group@local.edu')
+[?2004l[?2004h> mlist.subscription_policy = SubscriptionPolicy.open
+[?2004l[?2004h> mlist.unsubscription_policy = UnsubscriptionPolicy.open
+[?2004l[?2004h> mlist.posting_policy = PostingPolicy.open
+[?2004l[?2004h> transaction.commit()
+[?2004l[?2004h> print('configured', mlist.list_id)
+[?2004l[?2004h> PY
+[?2004lTraceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+ImportError: cannot import name 'UnsubscriptionPolicy' from 'mailman.interfaces.mailinglist' (/usr/lib/python3/dist-packages/mailman/interfaces/mailinglist.py). Did you mean: 'SubscriptionPolicy'?

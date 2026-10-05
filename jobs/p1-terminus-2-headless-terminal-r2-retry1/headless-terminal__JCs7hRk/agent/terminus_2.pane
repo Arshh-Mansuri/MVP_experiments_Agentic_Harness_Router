@@ -1,0 +1,306 @@
+[?2004hroot@6a1d73677ff9:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@6a1d73677ff9:/app# clear
+[?2004l[H[J[3J[?2004hroot@6a1d73677ff9:/app# pwd; printf '\n/app files:\n'; find /app -maxdepth 3 -type f -printf '%p\n' 2>/dev/null | sort | head -200; printf '\nBaseTerminal references:\n'; grep -R "class BaseTerminal\|BaseTerminal" -n /app /root 2>/dev/null | head -100
+[?2004l/app
+
+/app files:
+/app/base_terminal.py
+
+BaseTerminal references:
+/app/base_terminal.py:4:class BaseTerminal(ABC):
+[?2004hroot@6a1d73677ff9:/app# cat /app/base_terminal.py
+[?2004lfrom abc import ABC, abstractmethod
+
+
+class BaseTerminal(ABC):
+    @abstractmethod
+    def send_keystrokes(self, keystrokes: str, wait_sec: float = 0.0) -> None:
+        """
+        Sends keystrokes to the terminal.
+
+        Args:
+            keystrokes: The keystrokes to send to the terminal.
+            wait_sec: The number of seconds to wait for the command to complete.
+        """
+        pass
+[?2004hroot@6a1d73677ff9:/app# cat > /app/headless_terminal.py <<'PY'
+[?2004l      start_new_session=True,
+            env={**os.environ, "TERM": os.environ.get("TERM", "xterm-256color")},
+        )
+        os.close(slave)
+        self.pid = self.process.pid
+        os.set_blocking(self._master, False)
+        self._collect(startup_wait)
+
+    def _set_size(self, fd: int) -> None:
+        try:
+            termios.tcsetwinsize(fd, (self.rows, self.cols))
+        except AttributeError:
+            import fcntl
+            import struct
+            fcntl.ioctl(
+                fd,
+                termios.TIOCSWINSZ,
+                struct.pack("HHHH", self.rows, self.cols, 0, 0),
+            )
+
+    def _collect(self, wait_sec: float = 0.0) -> str:
+        chunks = []
+        deadline = time.monotonic() + max(0.0, wait_sec)
+        first = True
+        while first or time.monotonic() < deadline:
+            first = False
+            timeout = max(0.0, deadline - time.monotonic()) if wait_sec else 0.0
+            try:
+                ready, _, _ = select.select([self._master], [], [], timeout)
+            except (OSError, ValueError):
+                break
+            if not ready:
+                break
+            try:
+                data = os.read(self._master, 65536)
+            except OSError as exc:
+                if exc.errno in (errno.EIO, errno.EBADF, errno.EAGAIN):
+                    break
+                raise
+            if not data:
+                break
+            chunks.append(data)
+            if wait_sec:
+                deadline = max(deadline, time.monotonic() + 0.01)
+
+        text = b"".join(chunks).decode("utf-8", errors="replace")
+        self._output += text
+        return text
+
+    def send_keystrokes(self, keystrokes: str, wait_sec: float = 0.0) -> None:
+        """Send literal keystrokes, including control characters, to bash."""
+        if self._closed:
+            raise RuntimeError("terminal is closed")
+        data = keystrokes.encode("utf-8")
+        view = memoryview(data)
+        while view:
+            try:
+                count = os.write(self._master, view)
+                view = view[count:]
+            except InterruptedError:
+                continue
+        self._collect(wait_sec)
+
+    def read(self, wait_sec: float = 0.0) -> str:
+        """Collect and return output currently available from the terminal."""
+        return self._collect(wait_sec)
+
+    def get_output(self) -> str:
+        """Return all output collected since terminal startup."""
+        self._collect(0.0)
+        return self._output
+
+    @property
+    def screen(self) -> str:
+        return self.get_output()
+
+    def resize(self, cols: int, rows: int) -> None:
+        self.cols, self.rows = int(cols), int(rows)
+        self._set_size(self._master)
+        try:
+            os.kill(self.pid, signal.SIGWINCH)
+        except OSError:
+            pass
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            os.killpg(self.pid, signal.SIGHUP)
+        except OSError:
+            pass
+        try:
+            self.process.wait(timeout=1.0)
+        except subprocess.T[?2004h> """PTY-backed implementation of the BaseTerminal interface."""
+[?2004limeoutExpired:
+            try:
+                os.killpg(self.[?2004h> from __future__ import annotations
+[?2004l[?2004h> 
+[?2004lc[?2004h> import errno
+[?2004lrror:
+[?2004h> import os
+[?2004l[?2004h> import pty
+[?2004l[?2004h> import select
+[?2004l[?2004h> import signal
+[?2004l[?2004h> import subprocess
+[?2004l[?2004h> import termios
+[?2004l[?2004h> import time
+[?2004l[?2004h> from typing import Optional
+[?2004l[?2004h> 
+[?2004l[?2004h> from base_terminal import BaseTerminal
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> class HeadlessTerminal(BaseTerminal):
+[?2004l[?2004h>     """An interactive bash shell connected to a pseudo-terminal."""
+[?2004l, exc_type, exc[?2004h> 
+[?2004l[?2004h>     def __init__(
+[?2004l[?2004h>         self,
+[?2004l_value, traceback) -> None:
+     [?2004h>         cols: int = 120,
+[?2004l[?2004h>         rows: int = 40,
+[?2004l__del__(self) -> None:
+ [?2004h>         shell: Optional[str] = None,
+[?2004l[?2004h>         startup_wait: float = 0.05,
+[?2004l[?2004h>     ) -> None:
+[?2004l[?2004h>         self.cols = int(cols)
+[?2004l[?2004h>         self.rows = int(rows)
+[?2004lhon3 - <<'PY'
+[?2004h>         self._closed = False
+[?2004l[?2004h>         self._output = ""
+[?2004l[?2004h>         self._master, slave = pty.openpty()
+[?2004l[?2004h>         self._set_size(slave)
+[?2004l[?2004h> 
+[?2004l[?2004h>         shell = shell or os.environ.get("SHELL") or "/bin/bash"
+[?2004l[?2004h>         self.process = subprocess.Popen(
+[?2004l[?2004h>             [shell, "-i"],
+[?2004l[?2004h>             stdin=slave,
+[?2004l[?2004h>             stdout=slave,
+[?2004l[?2004h>             stderr=slave,
+[?2004lnterrupt\\n'\n", 0.2)
+asse[?2004h>             close_fds=True,
+[?2004lpt' in t.ge[?2004h>             start_new_session=True,
+[?2004l[?2004h>             env={**os.environ, "TERM": os.environ.get("TERM", "xterm-256color")},
+[?2004l[?2004h>         )
+[?2004l[?2004h>         os.close(slave)
+[?2004l[?2004h>         self.pid = self.process.pid
+[?2004l[?2004h>         os.set_blocking(self._master, False)
+[?2004l[?2004h>         self._collect(startup_wait)
+[?2004l[?2004h> 
+[?2004l[?2004h>     def _set_size(self, fd: int) -> None:
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             termios.tcsetwinsize(fd, (self.rows, self.cols))
+[?2004l[?2004h>         except AttributeError:
+[?2004l[?2004h>             import fcntl
+[?2004l[?2004h>             import struct
+[?2004l[?2004h>             fcntl.ioctl(
+[?2004l[?2004h>                 fd,
+[?2004l[?2004h>                 termios.TIOCSWINSZ,
+[?2004l[?2004h>                 struct.pack("HHHH", self.rows, self.cols, 0, 0),
+[?2004l[?2004h>             )
+[?2004l[?2004h> 
+[?2004l[?2004h>     def _collect(self, wait_sec: float = 0.0) -> str:
+[?2004l[?2004h>         chunks = []
+[?2004l[?2004h>         deadline = time.monotonic() + max(0.0, wait_sec)
+[?2004l[?2004h>         first = True
+[?2004l[?2004h>         while first or time.monotonic() < deadline:
+[?2004l[?2004h>             first = False
+[?2004l[?2004h>             timeout = max(0.0, deadline - time.monotonic()) if wait_sec else 0.0
+[?2004l[?2004h>             try:
+[?2004l[?2004h>                 ready, _, _ = select.select([self._master], [], [], timeout)
+[?2004l[?2004h>             except (OSError, ValueError):
+[?2004l[?2004h>                 break
+[?2004l[?2004h>             if not ready:
+[?2004l[?2004h>                 break
+[?2004l[?2004h>             try:
+[?2004l[?2004h>                 data = os.read(self._master, 65536)
+[?2004l[?2004h>             except OSError as exc:
+[?2004l[?2004h>                 if exc.errno in (errno.EIO, errno.EBADF, errno.EAGAIN):
+[?2004l[?2004h>                     break
+[?2004l[?2004h>                 raise
+[?2004l[?2004h>             if not data:
+[?2004l[?2004h>                 break
+[?2004l[?2004h>             chunks.append(data)
+[?2004l[?2004h>             if wait_sec:
+[?2004l[?2004h>                 deadline = max(deadline, time.monotonic() + 0.01)
+[?2004l[?2004h> 
+[?2004l[?2004h>         text = b"".join(chunks).decode("utf-8", errors="replace")
+[?2004l[?2004h>         self._output += text
+[?2004l[?2004h>         return text
+[?2004l[?2004h> 
+[?2004l[?2004h>     def send_keystrokes(self, keystrokes: str, wait_sec: float = 0.0) -> None:
+[?2004l[?2004h>         """Send literal keystrokes, including control characters, to bash."""
+[?2004l[?2004h>         if self._closed:
+[?2004l[?2004h>             raise RuntimeError("terminal is closed")
+[?2004l[?2004h>         data = keystrokes.encode("utf-8")
+[?2004l[?2004h>         view = memoryview(data)
+[?2004l[?2004h>         while view:
+[?2004l[?2004h>             try:
+[?2004l[?2004h>                 count = os.write(self._master, view)
+[?2004l[?2004h>                 view = view[count:]
+[?2004l[?2004h>             except InterruptedError:
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>         self._collect(wait_sec)
+[?2004l[?2004h> 
+[?2004l[?2004h>     def read(self, wait_sec: float = 0.0) -> str:
+[?2004l[?2004h>         """Collect and return output currently available from the terminal."""
+[?2004l[?2004h>         return self._collect(wait_sec)
+[?2004l[?2004h> 
+[?2004l[?2004h>     def get_output(self) -> str:
+[?2004l[?2004h>         """Return all output collected since terminal startup."""
+[?2004l[?2004h>         self._collect(0.0)
+[?2004l[?2004h>         return self._output
+[?2004l[?2004h> 
+[?2004l[?2004h>     @property
+[?2004l[?2004h>     def screen(self) -> str:
+[?2004l[?2004h>         return self.get_output()
+[?2004l[?2004h> 
+[?2004l[?2004h>     def resize(self, cols: int, rows: int) -> None:
+[?2004l[?2004h>         self.cols, self.rows = int(cols), int(rows)
+[?2004l[?2004h>         self._set_size(self._master)
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             os.kill(self.pid, signal.SIGWINCH)
+[?2004l[?2004h>         except OSError:
+[?2004l[?2004h>             pass
+[?2004l[?2004h> 
+[?2004l[?2004h>     def close(self) -> None:
+[?2004l[?2004h>         if self._closed:
+[?2004l[?2004h>             return
+[?2004l[?2004h>         self._closed = True
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             os.killpg(self.pid, signal.SIGHUP)
+[?2004l[?2004h>         except OSError:
+[?2004l[?2004h>             pass
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             self.process.wait(timeout=1.0)
+[?2004l[?2004h>         except subprocess.TimeoutExpired:
+[?2004l[?2004h>             try:
+[?2004l[?2004h>                 os.killpg(self.pid, signal.SIGKILL)
+[?2004l[?2004h>             except OSError:
+[?2004l[?2004h>                 pass
+[?2004l[?2004h>             self.process.wait()
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             os.close(self._master)
+[?2004l[?2004h>         except OSError:
+[?2004l[?2004h>             pass
+[?2004l[?2004h> 
+[?2004l[?2004h>     terminate = close
+[?2004l[?2004h> 
+[?2004l[?2004h>     def __enter__(self) -> "HeadlessTerminal":
+[?2004l[?2004h>         return self
+[?2004l[?2004h> 
+[?2004l[?2004h>     def __exit__(self, exc_type, exc_value, traceback) -> None:
+[?2004l[?2004h>         self.close()
+[?2004l[?2004h> 
+[?2004l[?2004h>     def __del__(self) -> None:
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             self.close()
+[?2004l[?2004h>         except Exception:
+[?2004l[?2004h>             pass
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@6a1d73677ff9:/app# python3 -m py_compile /app/headless_terminal.py
+[?2004l[?2004hroot@6a1d73677ff9:/app# python3 - <<'PY'
+[?2004l[?2004h> import sys, time
+[?2004l[?2004h> sys.path.insert(0, '/app')
+[?2004l[?2004h> from headless_terminal import HeadlessTerminal
+[?2004l[?2004h> 
+[?2004l[?2004h> t = HeadlessTerminal(startup_wait=0.1)
+[?2004l[?2004h> t.send_keystrokes("printf 'hello\\n'\n", 0.2)
+[?2004l[?2004h> assert 'hello' in t.get_output()
+[?2004l[?2004h> t.send_keystrokes("sleep 10\n", 0.05)
+[?2004l[?2004h> t.send_keystrokes("\x03", 0.2)
+[?2004l[?2004h> t.send_keystrokes("printf 'after-interrupt\\n'\n", 0.2)
+[?2004l[?2004h> assert 'after-interrupt' in t.get_output()
+[?2004l[?2004h> t.close()
+[?2004l[?2004h> print('smoke test passed')
+[?2004l[?2004h> PY
+[?2004lsmoke test passed
+[?2004hroot@6a1d73677ff9:/app# 

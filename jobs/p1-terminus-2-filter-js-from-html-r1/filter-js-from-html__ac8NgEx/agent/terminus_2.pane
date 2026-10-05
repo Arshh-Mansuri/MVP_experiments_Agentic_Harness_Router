@@ -1,0 +1,287 @@
+[?2004hroot@eef587e4dab1:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@eef587e4dab1:/app# clear
+[?2004l[H[J[3J[?2004hroot@eef587e4dab1:/app# cat > /app/filter.py <<'PY'
+[?2004l`]+))?"
+)
+
+
+class Sanitizer(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.output = []
+        self.in_script = False
+
+    def emit(self, text):
+        if not self.in_script:
+            self.output.append(text)
+
+    def handle_data(self, data):
+        self.emit(data)
+
+    def handle_entityref(self, name):
+        self.emit("&" + name + ";")
+
+    def handle_charref(self, name):
+        self.emit("&#" + name + ";")
+
+    def handle_comment(self, data):
+        self.emit("<!--" + data + "-->")
+
+    def handle_decl(self, decl):
+        self.emit("<!" + decl + ">")
+
+    def unknown_decl(self, data):
+        self.emit("<![" + data + "]>")
+
+    def handle_pi(self, data):
+        self.emit("<?" + data + ">")
+
+    def handle_starttag(self, tag, attrs):
+        tag_lower = tag.lower()
+        raw = self.get_starttag_text() or ("<" + tag + ">")
+
+        if tag_lower == "script":
+            self.in_script = True
+            return
+
+        remove_names = set()
+        attr_values = {name.lower(): (value or "") for name, value in attrs}
+
+        for name, value in attrs:
+            lname = name.lower()
+            if lname.startswith("on") and len(lname) > 2:
+                remove_names.add(lname)
+            elif lname == "srcdoc":
+                remove_names.add(lname)
+            elif lname in URI_ATTRIBUTES and dangerous_url(value):
+                remove_names.add(lname)
+            elif lname == "style" and dangerous_css(value):
+                remove_names.add(lname)
+
+        # A refresh meta tag can navigate to a javascript: URL through its
+        # content attribute.
+        if tag_lower == "meta":
+            equiv = attr_values.get("http-equiv", "").strip().lower()
+            content = attr_values.get("content", "")
+            if equiv == "refresh" and re.search(r"(?is)(?:^|[;,])\s*url\s*=\s*javascript:", unescape(content)):
+                remove_names.add("content")
+
+        if remove_names:
+            def replace_attr(match):
+                if match.group(2).lower() in remove_names:
+                    return ""
+                return match.group(0)
+            raw = _ATTR_RE.sub(replace_attr, raw)
+
+        self.emit(raw)
+
+    def handle_startendtag(self, tag, attrs):
+        if tag.lower() == "script":
+            return
+        # HTMLParser provides the original spelling and spacing for start tags.
+        self.handle_starttag(tag, attrs)
+        if self.output and not self.output[-1].rstrip().endswith("/"):
+            # This branch is normally unnecessary; retain the source form by
+            # using the parser's original self-closing tag text below instead.
+            pass
+
+    def handle_endtag(self, tag):
+        if tag.lower() == "script":
+            self.in_script = False
+            return
+        self.emit("</" + tag + ">")
+
+
+def main():
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: filter.py HTML_FILE")
+
+    path = sys.argv[1]
+    with open(path, "rb") as f:
+        data = f.read()
+    text = data.decode("utf-8", errors="surrogateescape")
+
+    parser =[?2004h> #!/usr/bin/env python3
+[?2004l Sanitizer()
+    parser[?2004h> import os
+[?2004l[?2004h> import re
+[?2004l[?2004h> import sys
+[?2004l[?2004h> import tempfile
+[?2004l[?2004h> from html import unescape
+[?2004ljoin(parser.output).encode[?2004h> from html.parser import HTMLParser
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> # Attributes whose values can cause a URL to be interpreted as JavaScript.
+[?2004lirname(path) or "."
+    fd, temporary = tempfile.m[?2004h> URI_ATTRIBUTES = {
+[?2004l[?2004h>     "href", "src", "action", "formaction", "xlink:href", "poster",
+[?2004l[?2004h>     "background", "cite", "longdesc", "manifest", "data", "codebase",
+[?2004l[?2004h> }
+[?2004l[?2004h> 
+[?2004lh).[?2004h> 
+[?2004l[?2004h> def dangerous_url(value):
+[?2004l[?2004h>     """Recognize javascript: URLs even when whitespace/control characters or
+[?2004l[?2004h>     character references are used to disguise the scheme.
+[?2004l:
+            pass
+        [?2004h>     """
+[?2004l[?2004h>     value = unescape(value or "")
+[?2004l[?2004h>     value = re.sub(r"[\x00-\x20\x7f\xa0]+", "", value)
+[?2004l[?2004h>     return bool(re.match(r"(?i)^javascript:", value))
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def dangerous_css(value):
+[?2004l[?2004h>     value = unescape(value or "")
+[?2004l[?2004h>     return bool(re.search(
+[?2004l[?2004h>         r"(?is)(?:expression\s*\(|-moz-binding\s*:|behavior\s*:|"
+[?2004l[?2004h>         r"url\s*\(\s*[\"']?\s*javascript:)", value
+[?2004l[?2004h>     ))
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> _ATTR_RE = re.compile(
+[?2004l[?2004h>     r"(?is)(\s+)([a-z][a-z0-9_:.-]*)(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s\"'=<>`]+))?"
+[?2004l[?2004h> )
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> class Sanitizer(HTMLParser):
+[?2004l[?2004h>     def __init__(self):
+[?2004l[?2004h>         super().__init__(convert_charrefs=False)
+[?2004l[?2004h>         self.output = []
+[?2004l[?2004h>         self.in_script = False
+[?2004l[?2004h> 
+[?2004l[?2004h>     def emit(self, text):
+[?2004l[?2004h>         if not self.in_script:
+[?2004l[?2004h>             self.output.append(text)
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_data(self, data):
+[?2004l[?2004h>         self.emit(data)
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_entityref(self, name):
+[?2004l[?2004h>         self.emit("&" + name + ";")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_charref(self, name):
+[?2004l[?2004h>         self.emit("&#" + name + ";")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_comment(self, data):
+[?2004l[?2004h>         self.emit("<!--" + data + "-->")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_decl(self, decl):
+[?2004l[?2004h>         self.emit("<!" + decl + ">")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def unknown_decl(self, data):
+[?2004l[?2004h>         self.emit("<![" + data + "]>")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_pi(self, data):
+[?2004l[?2004h>         self.emit("<?" + data + ">")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_starttag(self, tag, attrs):
+[?2004l[?2004h>         tag_lower = tag.lower()
+[?2004l[?2004h>         raw = self.get_starttag_text() or ("<" + tag + ">")
+[?2004l[?2004h> 
+[?2004l[?2004h>         if tag_lower == "script":
+[?2004l[?2004h>             self.in_script = True
+[?2004l[?2004h>             return
+[?2004l[?2004h> 
+[?2004l[?2004h>         remove_names = set()
+[?2004l[?2004h>         attr_values = {name.lower(): (value or "") for name, value in attrs}
+[?2004l[?2004h> 
+[?2004l[?2004h>         for name, value in attrs:
+[?2004l[?2004h>             lname = name.lower()
+[?2004l[?2004h>             if lname.startswith("on") and len(lname) > 2:
+[?2004l[?2004h>                 remove_names.add(lname)
+[?2004l[?2004h>             elif lname == "srcdoc":
+[?2004l[?2004h>                 remove_names.add(lname)
+[?2004l[?2004h>             elif lname in URI_ATTRIBUTES and dangerous_url(value):
+[?2004l[?2004h>                 remove_names.add(lname)
+[?2004l[?2004h>             elif lname == "style" and dangerous_css(value):
+[?2004l[?2004h>                 remove_names.add(lname)
+[?2004l[?2004h> 
+[?2004l[?2004h>         # A refresh meta tag can navigate to a javascript: URL through its
+[?2004l[?2004h>         # content attribute.
+[?2004l[?2004h>         if tag_lower == "meta":
+[?2004l[?2004h>             equiv = attr_values.get("http-equiv", "").strip().lower()
+[?2004l[?2004h>             content = attr_values.get("content", "")
+[?2004l[?2004h>             if equiv == "refresh" and re.search(r"(?is)(?:^|[;,])\s*url\s*=\s*javascript:", unescape(content)):
+[?2004l[?2004h>                 remove_names.add("content")
+[?2004l[?2004h> 
+[?2004l[?2004h>         if remove_names:
+[?2004l[?2004h>             def replace_attr(match):
+[?2004l[?2004h>                 if match.group(2).lower() in remove_names:
+[?2004l[?2004h>                     return ""
+[?2004l[?2004h>                 return match.group(0)
+[?2004l[?2004h>             raw = _ATTR_RE.sub(replace_attr, raw)
+[?2004l[?2004h> 
+[?2004l[?2004h>         self.emit(raw)
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_startendtag(self, tag, attrs):
+[?2004l[?2004h>         if tag.lower() == "script":
+[?2004l[?2004h>             return
+[?2004l[?2004h>         # HTMLParser provides the original spelling and spacing for start tags.
+[?2004l[?2004h>         self.handle_starttag(tag, attrs)
+[?2004l[?2004h>         if self.output and not self.output[-1].rstrip().endswith("/"):
+[?2004l[?2004h>             # This branch is normally unnecessary; retain the source form by
+[?2004l[?2004h>             # using the parser's original self-closing tag text below instead.
+[?2004l[?2004h>             pass
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_endtag(self, tag):
+[?2004l[?2004h>         if tag.lower() == "script":
+[?2004l[?2004h>             self.in_script = False
+[?2004l[?2004h>             return
+[?2004l[?2004h>         self.emit("</" + tag + ">")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     if len(sys.argv) != 2:
+[?2004l[?2004h>         raise SystemExit("usage: filter.py HTML_FILE")
+[?2004l[?2004h> 
+[?2004l[?2004h>     path = sys.argv[1]
+[?2004l[?2004h>     with open(path, "rb") as f:
+[?2004l[?2004h>         data = f.read()
+[?2004l[?2004h>     text = data.decode("utf-8", errors="surrogateescape")
+[?2004l[?2004h> 
+[?2004l[?2004h>     parser = Sanitizer()
+[?2004l[?2004h>     parser.feed(text)
+[?2004l[?2004h>     parser.close()
+[?2004l[?2004h>     result = "".join(parser.output).encode("utf-8", errors="surrogateescape")
+[?2004l[?2004h> 
+[?2004l[?2004h>     directory = os.path.dirname(path) or "."
+[?2004l[?2004h>     fd, temporary = tempfile.mkstemp(prefix=".filter-", dir=directory)
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         with os.fdopen(fd, "wb") as f:
+[?2004l[?2004h>             f.write(result)
+[?2004l[?2004h>         os.chmod(temporary, os.stat(path).st_mode)
+[?2004l[?2004h>         os.replace(temporary, path)
+[?2004l[?2004h>     except Exception:
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             os.unlink(temporary)
+[?2004l[?2004h>         except OSError:
+[?2004l[?2004h>             pass
+[?2004l[?2004h>         raise
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     main()
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@eef587e4dab1:/app# chmod +x /app/filter.py
+[?2004l[?2004hroot@eef587e4dab1:/app# python3 -m py_compile /app/filter.py
+[?2004l[?2004hroot@eef587e4dab1:/app# python3 - <<'PY'
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> p = Path('/tmp/filter-test.html')
+[?2004l[?2004h> p.write_text('''<!doctype html>\n<div class="ok" onclick="alert(1)" data-x="1">Hello &amp; <b>world</b></div>\n<script>alert(1)</script>\n<a href=" javascript&#58;alert(1)" title="keep">link</a>\n<img src="x" onerror='bad()' />\n<div style="color:red">safe</div>\n<div style="width: expression(alert(1))">bad-css</div>\n<iframe srcdoc="<script>alert(1)</script>"></iframe>\n<!-- keep comment -->\n''')
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@eef587e4dab1:/app# python3 /app/filter.py /tmp/filter-test.html
+[?2004l[?2004hroot@eef587e4dab1:/app# cat /tmp/filter-test.html
+[?2004l<!doctype html>
+<div class="ok" data-x="1">Hello &amp; <b>world</b></div>
+
+<a title="keep">link</a>
+<img src="x" />
+<div style="color:red">safe</div>
+<div>bad-css</div>
+<iframe></iframe>
+<!-- keep comment -->
+[?2004hroot@eef587e4dab1:/app# grep -nE 'script|onclick|onerror|javascript|expression|srcdoc' /tmp/filter-test.html || true
+[?2004l[?2004hroot@eef587e4dab1:/app# python3 -m py_compile /app/filter.py
+[?2004l[?2004hroot@eef587e4dab1:/app# 

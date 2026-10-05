@@ -93,8 +93,11 @@ python cv_gate.py
 python prompt_iterations.py --reps 2
 ```
 
-Routers: `--router luna` (GPT-5.6-Luna, default choice for experiments), `--router gemma` (local Gemma 270M,
-votes over all harness orderings), `--router gate` (TF-IDF classifier, no LLM cost).
+Routers: `--router jev` (Luna researches the harnesses, Jev picks: OpenRouter's `typesafe/jev-router` chooses
+from the frozen harness profiles in `router/harness_profiles.md`, which Luna wrote from the harness source code),
+`--router luna-profiles` (Luna picks from the same profiles), `--router luna` (Luna with hand-written harness
+descriptions), `--router gemma` (local Gemma 270M, votes over all harness orderings), `--router gate`
+(TF-IDF classifier, no LLM cost).
 
 ## Known issues
 

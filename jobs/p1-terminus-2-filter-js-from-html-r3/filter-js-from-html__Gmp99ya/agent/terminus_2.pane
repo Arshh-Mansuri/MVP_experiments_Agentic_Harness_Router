@@ -1,0 +1,263 @@
+[?2004hroot@8ae4f2871161:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@8ae4f2871161:/app# clear
+[?2004l[H[J[3J[?2004hroot@8ae4f2871161:/app# pwd; ls -la; python3 - <<'PY'
+[?2004l[?2004h> try:
+[?2004l[?2004h>  import bs4
+[?2004l[?2004h>  print('bs4 available', bs4.__version__)
+[?2004l[?2004h> except Exception as e:
+[?2004l[?2004h>  print('bs4 unavailable:', e)
+[?2004l[?2004h> try:
+[?2004l[?2004h>  import lxml
+[?2004l[?2004h>  print('lxml available', lxml.__version__)
+[?2004l[?2004h> except Exception as e:
+[?2004l[?2004h>  print('lxml unavailable:', e)
+[?2004l[?2004h> PY
+[?2004l/app
+total 8
+drwxr-xr-x 2 root root 4096 Sep 13  2025 .
+drwxr-xr-x 1 root root 4096 Oct  4 23:57 ..
+bs4 available 4.13.4
+lxml unavailable: No module named 'lxml'
+[?2004hroot@8ae4f2871161:/app# cat > /app/filter.py <<'PY'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004lame + ";")
+
+    def han[?2004h> """Remove executable JavaScript from an HTML file in place."""
+[?2004l[?2004h> 
+[?2004l[?2004h> import re
+[?2004lwser condi[?2004h> import sys
+[?2004l[?2004h> from html.parser import HTMLParser
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004lk[?2004h> 
+[?2004l[?2004h> # Elements whose contents can execute script or otherwise provide an active
+[?2004l[?2004h> # browser execution context.  Removing the complete element is safer than
+[?2004l[?2004h> # trying to rewrite its contents.
+[?2004l      [?2004h> DROP_ELEMENTS = {
+[?2004l    self.out.appen[?2004h>     "script", "iframe", "object", "embed", "applet", "base", "form",
+[?2004l[?2004h> }
+[?2004l n[?2004h> 
+[?2004l[?2004h> # URL-bearing attributes which must not contain executable schemes.
+[?2004l[?2004h> URL_ATTRIBUTES = {
+[?2004l[?2004h>     "href", "src", "action", "formaction", "cite", "background",
+[?2004l[?2004h>     "poster", "profile", "usemap", "longdesc", "dynsrc", "lowsrc",
+[?2004l[?2004h>     "ping", "xlink:href",
+[?2004l[?2004h> }
+[?2004l[?2004h> 
+[?2004l        if not self.drop_dept[?2004h> # Keep the parser close to the original HTML serialization: only remove the
+[?2004lnitize(text: str[?2004h> # dangerous pieces, and retain ordinary start/end tags and text verbatim.
+[?2004l[?2004h> EVENT_ATTRIBUTE = re.compile(r"^on[a-z0-9_:-]+$", re.I)
+[?2004l[?2004h> LEADING_SPACE = re.compile(r"^[\s\ufeff]*")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def dangerous_url(value: str) -> bool:
+[?2004l[?2004h>     """Return true for URL values that can execute script in a browser."""
+[?2004l[?2004h>     normalized = re.sub(r"[\x00-\x20\t\r\n\f]+", "", value).lower()
+[?2004l[?2004h>     return (
+[?2004l[?2004h>         normalized.startswith("javascript:")
+[?2004l[?2004h>         or normalized.startswith("vbscript:")
+[?2004l[?2004h>         or normalized.startswith("data:text/html")
+[?2004l[?2004h>         or normalized.startswith("data:application/xhtml+xml")
+[?2004l_ [?2004h>         or normalized.startswith("data:image/svg+xml")
+[?2004l[?2004h>     )
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> class Sanitizer(HTMLParser):
+[?2004l[?2004h>     def __init__(self) -> None:
+[?2004l[?2004h>         super().__init__(convert_charrefs=False)
+[?2004l[?2004h>         self.out = []
+[?2004l[?2004h>         self.drop_depth = 0
+[?2004l[?2004h>         self.raw_depth = 0
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_starttag(self, tag, attrs):
+[?2004l[?2004h>         tag_lower = tag.lower()
+[?2004l[?2004h>         if self.drop_depth:
+[?2004l[?2004h>             if tag_lower in DROP_ELEMENTS:
+[?2004l[?2004h>                 self.drop_depth += 1
+[?2004l[?2004h>             return
+[?2004l[?2004h>         if tag_lower in DROP_ELEMENTS:
+[?2004l[?2004h>             self.drop_depth = 1
+[?2004l[?2004h>             return
+[?2004l[?2004h> 
+[?2004l[?2004h>         kept = []
+[?2004l[?2004h>         for name, value in attrs:
+[?2004l[?2004h>             name_lower = name.lower()
+[?2004l[?2004h>             if EVENT_ATTRIBUTE.match(name_lower):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             if name_lower in URL_ATTRIBUTES and value is not None and dangerous_url(value):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             # SVG/MathML namespace attributes can also carry script URLs.
+[?2004l[?2004h>             if name_lower in {"href", "xlink:href"} and value is not None and dangerous_url(value):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             kept.append((name, value))
+[?2004l[?2004h> 
+[?2004l[?2004h>         # Re-emit only this tag. Attribute quoting may be normalized by the
+[?2004l[?2004h>         # standard parser, which is explicitly allowed by the task.
+[?2004l[?2004h>         self.out.append("<" + tag)
+[?2004l[?2004h>         for name, value in kept:
+[?2004l[?2004h>             self.out.append(" " + name)
+[?2004l[?2004h>             if value is not None:
+[?2004l[?2004h>                 escaped = value.replace("&", "&amp;").replace('"', "&quot;")
+[?2004l[?2004h>                 self.out.append('="' + escaped + '"')
+[?2004l[?2004h>         self.out.append(">")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_startendtag(self, tag, attrs):
+[?2004l[?2004h>         tag_lower = tag.lower()
+[?2004l[?2004h>         if self.drop_depth or tag_lower in DROP_ELEMENTS:
+[?2004l[?2004h>             return
+[?2004l[?2004h>         kept = []
+[?2004l[?2004h>         for name, value in attrs:
+[?2004l[?2004h>             if EVENT_ATTRIBUTE.match(name.lower()):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             if name.lower() in URL_ATTRIBUTES and value is not None and dangerous_url(value):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             kept.append((name, value))
+[?2004l[?2004h>         self.out.append("<" + tag)
+[?2004l[?2004h>         for name, value in kept:
+[?2004l[?2004h>             self.out.append(" " + name)
+[?2004l[?2004h>             if value is not None:
+[?2004l[?2004h>                 self.out.append('="' + value.replace("&", "&amp;").replace('"', "&quot;") + '"')
+[?2004l[?2004h>         self.out.append("/>")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_endtag(self, tag):
+[?2004l[?2004h>         if self.drop_depth:
+[?2004l[?2004h>             if tag.lower() in DROP_ELEMENTS:
+[?2004l[?2004h>                 self.drop_depth -= 1
+[?2004l[?2004h>             return
+[?2004l[?2004h>         self.out.append("</" + tag + ">")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_data(self, data):
+[?2004l[?2004h>         if not self.drop_depth:
+[?2004l[?2004h>             self.out.append(data)
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_entityref(self, name):
+[?2004l[?2004h>         if not self.drop_depth:
+[?2004l[?2004h>             self.out.append("&" + name + ";")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_charref(self, name):
+[?2004l[?2004h>         if not self.drop_depth:
+[?2004l[?2004h>             self.out.append("&#" + name + ";")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_comment(self, data):
+[?2004l[?2004h>         # HTML comments can contain browser conditional/script tricks; remove
+[?2004l[?2004h>         # comments that contain script-looking content, preserve other comments.
+[?2004l[?2004h>         if not self.drop_depth:
+[?2004l[?2004h>             if re.search(r"(?:<\s*script|javascript\s*:|\bon\w+\s*=)", data, re.I):
+[?2004l[?2004h>                 return
+[?2004l[?2004h>             self.out.append("<!--" + data + "-->")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_decl(self, decl):
+[?2004l[?2004h>         if not self.drop_depth:
+[?2004l[?2004h>             self.out.append("<!" + decl + ">")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_pi(self, data):
+[?2004l[?2004h>         if not self.drop_depth:
+[?2004l[?2004h>             self.out.append("<?" + data + ">")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def handle_unknown_decl(self, data):
+[?2004l[?2004h>         if not self.drop_depth:
+[?2004l[?2004h>             self.out.append("<![" + data + "]>")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def sanitize(text: str) -> str:
+[?2004l[?2004h>     parser = Sanitizer()
+[?2004l[?2004h>     parser.feed(text)
+[?2004l[?2004h>     parser.close()
+[?2004l[?2004h>     return "".join(parser.out)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main() -> int:
+[?2004l[?2004h>     if len(sys.argv) != 2:
+[?2004l[?2004h>         print(f"usage: {sys.argv[0]} HTML_FILE", file=sys.stderr)
+[?2004l[?2004h>         return 2
+[?2004l[?2004h>     path = Path(sys.argv[1])
+[?2004l[?2004h>     raw = path.read_bytes()
+[?2004l[?2004h>     # Preserve UTF-8 and common legacy encodings as far as possible.
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         text = raw.decode("utf-8")
+[?2004l[?2004h>     except UnicodeDecodeError:
+[?2004l[?2004h>         text = raw.decode("latin-1")
+[?2004l[?2004h>     result = sanitize(text)
+[?2004l[?2004h>     path.write_bytes(result.encode("utf-8"))
+[?2004l[?2004h>     return 0
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     raise SystemExit(main())
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@8ae4f2871161:/app# chmod +x /app/filter.py
+[?2004l[?2004hroot@8ae4f2871161:/app# python3 -m py_compile /app/filter.py
+[?2004l[?2004hroot@8ae4f2871161:/app# tmp=$(mktemp); cat > "$tmp" <<'EOF'
+[?2004l[?2004h> <!doctype html><html><head><title>Hi</title><script>alert(1)</script></head><body onload="x()"><h1 class="ok">Hello</h1><a href="javascript:alert(1)" onclick="x()">link</a><img src="safe.png" alt="pic"><!-- keep --></body></html>
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@8ae4f2871161:/app# python3 /app/filter.py "$tmp"; cat "$tmp"; rm -f "$tmp"
+[?2004l<!doctype html><html><head><title>Hi</title></head><body><h1 class="ok">Hello</h1><a>link</a><img src="safe.png" alt="pic"><!-- keep --></body></html>
+[?2004hroot@8ae4f2871161:/app# python3 - <<'PY'
+[?2004l[?2004h> p='/app/filter.py'
+[?2004l[?2004h> s=open(p).read()
+[?2004l[?2004h> s=s.replace('    "script", "iframe", "object", "embed", "applet", "base", "form",\n', '    "script", "iframe", "object", "embed", "applet",\n')
+[?2004lscript|vbscript):", value, re.I):\n                continue\n', 1)
+# Apply equivalent protections to self-closing tags.
+old='''            if name.lower() in URL_ATTRIBUTES and value is not None and dangerous_url(value):
+                continue
+            kept.append((name, value))
+'''
+new='''            if name.lower() in URL_ATTRIBUTES and value is not None and dangerous_url(value):
+                continue
+            if name.lower() in {"style", "srcdoc"} and value is not None and CSS_SCRIPT.search(value):
+                continue
+            if name.lower() == "content" and value is not None and re.search(r"(?:^|;)\\s*url\\s*\\(\\s*(?:javascript|vbscript):", value, re.I):
+                continue
+            kept.append((name, value))
+'''
+s=s.replace(old,new,1)
+open(p,'w').write(s)
+PY
+python3 -m py_compile /app/filter.py
+[?2004h> s=s.replace('URL_ATTRIBUTES = {\n', 'URL_ATTRIBUTES = {\n')
+[?2004l[?2004h> s=s.replace('EVENT_ATTRIBUTE = re.compile(r"^on[a-z0-9_:-]+$", re.I)\n', 'EVENT_ATTRIBUTE = re.compile(r"^on[a-z0-9_:-]+$", re.I)\nCSS_SCRIPT = re.compile(r"(?:javascript\\s*:|vbscript\\s*:|expression\\s*\\(|url\\s*\\(\\s*[\\\'\\\"]?\\s*(?:javascript|vbscript):)", re.I)\n')
+[?2004l[?2004h> s=s.replace('            if name_lower in URL_ATTRIBUTES and value is not None and dangerous_url(value):\n                continue\n', '            if name_lower in URL_ATTRIBUTES and value is not None and dangerous_url(value):\n                continue\n            if name_lower in {"style", "srcdoc"} and value is not None and CSS_SCRIPT.search(value):\n                continue\n            if name_lower == "content" and value is not None and re.search(r"(?:^|;)\\s*url\\s*\\(\\s*(?:javascript|vbscript):", value, re.I):\n                continue\n', 1)
+[?2004l[?2004h> # Apply equivalent protections to self-closing tags.
+[?2004l[?2004h> old='''            if name.lower() in URL_ATTRIBUTES and value is not None and dangerous_url(value):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             kept.append((name, value))
+[?2004l[?2004h> '''
+[?2004l[?2004h> new='''            if name.lower() in URL_ATTRIBUTES and value is not None and dangerous_url(value):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             if name.lower() in {"style", "srcdoc"} and value is not None and CSS_SCRIPT.search(value):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             if name.lower() == "content" and value is not None and re.search(r"(?:^|;)\\s*url\\s*\\(\\s*(?:javascript|vbscript):", value, re.I):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             kept.append((name, value))
+[?2004l[?2004h> '''
+[?2004l[?2004h> s=s.replace(old,new,1)
+[?2004l[?2004h> open(p,'w').write(s)
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@8ae4f2871161:/app# python3 -m py_compile /app/filter.py
+[?2004ltmp=$(mktemp); cat > "$tmp" <<'EOF'
+<html><body><form action="/save"><input name="x" onchange="alert(1)"></form><div style="background:url(javascript:alert(1))">ok</div><meta http-equiv="refresh" content="0;url=javascript:alert(1)"><iframe src="javascript:alert(1)"></iframe><p>safe</p></body></html>
+EOF
+python3 /app/filter.py "$tmp"; cat "$tmp"; rm -f "$tmp"
+[?2004hroot@8ae4f2871161:/app# tmp=$(mktemp); cat > "$tmp" <<'EOF'
+[?2004l[?2004h> <html><body><form action="/save"><input name="x" onchange="alert(1)"></form><div style="background:url(javascript:alert(1))">ok</div><meta http-equiv="refresh" content="0;url=javascript:alert(1)"><iframe src="javascript:alert(1)"></iframe><p>safe</p></body></html>
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@8ae4f2871161:/app# python3 /app/filter.py "$tmp"; cat "$tmp"; rm -f "$tmp"
+[?2004l<html><body><form action="/save"><input name="x"></form><div>ok</div><meta http-equiv="refresh" content="0;url=javascript:alert(1)"><p>safe</p></body></html>
+[?2004hroot@8ae4f2871161:/app# grep -nE 'DROP_ELEMENTS|CSS_SCRIPT|style|srcdoc|content' /app/filter.py; ls -l /app/filter.py
+[?2004l10:# Elements whose contents can execute script or otherwise provide an active
+12:# trying to rewrite its contents.
+13:DROP_ELEMENTS = {
+27:CSS_SCRIPT = re.compile(r"(?:javascript\s*:|vbscript\s*:|expression\s*\(|url\s*\(\s*[\'\"]?\s*(?:javascript|vbscript):)", re.I)
+53:            if tag_lower in DROP_ELEMENTS:
+56:        if tag_lower in DROP_ELEMENTS:
+67:            if name_lower in {"style", "srcdoc"} and value is not None and CSS_SCRIPT.search(value):
+69:            if name_lower == "content" and value is not None and re.search(r"(?:^|;)\s*url\s*\(\s*(?:javascript|vbscript):", value, re.I):
+88:        if self.drop_depth or tag_lower in DROP_ELEMENTS:
+96:            if name.lower() in {"style", "srcdoc"} and value is not None and CSS_SCRIPT.search(value):
+98:            if name.lower() == "content" and value is not None and re.search(r"(?:^|;)\s*url\s*\(\s*(?:javascript|vbscript):", value, re.I):
+110:            if tag.lower() in DROP_ELEMENTS:
+129:        # comments that contain script-looking content, preserve other comments.
+-rwxr-xr-x 1 root root 6179 Oct  4 23:58 /app/filter.py
+[?2004hroot@8ae4f2871161:/app# 

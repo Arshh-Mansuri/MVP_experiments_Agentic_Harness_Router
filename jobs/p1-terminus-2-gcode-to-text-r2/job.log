@@ -1,0 +1,197 @@
+Skipping image OS validation for alexgshaw/gcode-to-text:20251031: docker inspect returned 1
+Installing: tmux, asciinema
+Detected system: {'os': 'debian-based', 'package_manager': 'apt-get', 'update_command': None}
+Installing tools using apt-get: DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tmux asciinema
+Starting recording.
+Sending keys: ['asciinema rec --stdin /logs/agent/recording.cast', 'Enter'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['clear', 'Enter'] min_timeout_sec: 0.0 max_timeout_sec: 180.0
+Sending keys: ["ls -la /app && file /app/text.gcode && sed -n '1,240p' /app/text.gcode\n"] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ["printf '%s\\n' '--- HEAD ---'; sed -n '1,180p' /app/text.gcode; printf '%s\\n' '--- COMMENT SUMMARY ---'; grep -E '^;' /app/text.gcode | head -200; printf '%s\\n' '--- TAIL ---'; tail -180 /app/text.gcode\n"] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ["printf '%s\\n' 'size/lines:'; wc -l -c /app/text.gcode; printf '%s\\n' 'object markers:'; grep -nE 'M486|layer|LAYER|Z[0-9]' /app/text.gcode | head -100; printf '%s\\n' 'python tools:'; python3 - <<'PY'\ntry:\n import PIL; print('PIL yes')\nexcept Exception as e: print('PIL no',e)\ntry:\n import cv2; print('cv2 yes')\nexcept Exception as e: print('cv2 no',e)\nPY\ncommand -v convert || true; command -v tesseract || true; command -v ffmpeg || true\n"] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ["cat > /tmp/render.py <<'PY'\nimport re, math\nfn='/app/text.gcode'\nobj=-1; x=y=z=0.0; seg=[]; layers={}\nlastz=None\nfor line in open(fn, errors='ignore'):\n    s=line.strip()\n    if s.startswith('M486'):\n        m=re.match(r'M486\\\\s+S(-?\\\\d+)',s)\n        if m: obj=int(m.group(1))\n        continue\n    if not (s.startswith('G0') or s.startswith('G1')): continue\n    vals={k:float(v) for k,v in re.findall(r'([XYZE])(-?(?:\\\\d+\\\\.?\\\\d*|\\\\.\\\\d+))',s)}\n    nx=vals.get('X',x); ny=vals.get('Y',y); nz=vals.get('Z',z)\n    if obj==0 and 'E' in vals and vals['E']>0 and ('X' in vals or 'Y' in vals):\n        seg.append((x,y,nx,ny,nz))\n        layers.setdefault(round(nz,2),0); layers[round(nz,2)]+=1\n    x,y,z=nx,ny,nz\nprint('segments',len(seg),'layers',layers)\nif not seg: raise SystemExit\nxmin=min(min(a,c) for a,b,c,d,e in seg); xmax=max(max(a,c) for a,b,c,d,e in seg)\nymin=min(min(b,d) for a,b,c,d,e in seg); ymax=max(max(b,d) for a,b,c,d,e in seg)\nprint('bbox',xmin,xmax,ymin,ymax)\n# rasterize union, preserving aspect ratio\nW=160; H=max(1,round((ymax-ymin)/(xmax-xmin)*W*0.5))\ngrid=[[' ']*W for _ in range(H)]\ndef pix(px,py):\n    ix=round((px-xmin)/(xmax-xmin)*(W-1)); iy=round((ymax-py)/(ymax-ymin)*(H-1))\n    if 0<=ix<W and 0<=iy<H: grid[iy][ix]='#'\nfor a,b,c,d,e in seg:\n    n=max(1,round(math.hypot(c-a,d-b)*W/(xmax-xmin)*3))\n    for i in range(n+1): pix(a+(c-a)*i/n,b+(d-b)*i/n)\nprint('raster',W,H)\nfor row in grid: print(''.join(row).rstrip())\nPY\npython3 /tmp/render.py\n"] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ["cat > /tmp/render.py <<'PY'\nimport re, math\nfn='/app/text.gcode'\nobj=-1; x=y=z=0.0; seg=[]; layers={}\nfor line in open(fn, errors='ignore'):\n    s=line.strip()\n    if s.startswith('M486'):\n        m=re.match(r'M486\\s+S(-?\\d+)', s)\n        if m: obj=int(m.group(1))\n        continue\n    if not (s.startswith('G0') or s.startswith('G1')): continue\n    vals={k:float(v) for k,v in re.findall(r'([XYZE])(-?(?:\\d+\\.?\\d*|\\.\\d+))', s)}\n    nx=vals.get('X',x); ny=vals.get('Y',y); nz=vals.get('Z',z)\n    if obj==0 and vals.get('E',0)>0 and ('X' in vals or 'Y' in vals):\n        seg.append((x,y,nx,ny,nz))\n        layers.setdefault(round(nz,2),0); layers[round(nz,2)]+=1\n    x,y,z=nx,ny,nz\nprint('segments',len(seg),'layers',layers)\nif not seg: raise SystemExit\nxmin=min(min(a,c) for a,b,c,d,e in seg); xmax=max(max(a,c) for a,b,c,d,e in seg)\nymin=min(min(b,d) for a,b,c,d,e in seg); ymax=max(max(b,d) for a,b,c,d,e in seg)\nprint('bbox',xmin,xmax,ymin,ymax)\nW=200; H=max(1,round((ymax-ymin)/(xmax-xmin)*W*0.5))\ngrid=[[' ']*W for _ in range(H)]\ndef pix(px,py):\n    ix=round((px-xmin)/(xmax-xmin)*(W-1)); iy=round((ymax-py)/(ymax-ymin)*(H-1))\n    if 0<=ix<W and 0<=iy<H: grid[iy][ix]='#'\nfor a,b,c,d,e in seg:\n    n=max(1,round(math.hypot(c-a,d-b)*W/(xmax-xmin)*3))\n    for i in range(n+1): pix(a+(c-a)*i/n,b+(d-b)*i/n)\nprint('raster',W,H)\nfor row in grid: print(''.join(row).rstrip())\nPY\npython3 /tmp/render.py\n"] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ["cat > /tmp/layers.py <<'PY'\nimport re, math\nobj=-1; x=y=z=0.; layers={}\nfor line in open('/app/text.gcode', errors='ignore'):\n s=line.strip()\n if s.startswith('M486'):\n  m=re.match(r'M486\\s+S(-?\\d+)',s)\n  if m: obj=int(m.group(1))\n  continue\n if not (s.startswith('G0') or s.startswith('G1')): continue\n v={k:float(n) for k,n in re.findall(r'([XYZE])(-?(?:\\d+\\.?\\d*|\\.\\d+))',s)}\n nx=v.get('X',x); ny=v.get('Y',y); nz=v.get('Z',z)\n if obj==0 and v.get('E',0)>0 and ('X' in v or 'Y' in v):\n  key=round(nz,2); layers.setdefault(key,[]).append((x,y,nx,ny))\n x,y,z=nx,ny,nz\nkeys=sorted(layers)\nprint('layers:',[(k,len(layers[k])) for k in keys])\nfor key in keys[-12:]:\n ss=layers[key]\n xmin=min(min(a,c) for a,b,c,d in ss); xmax=max(max(a,c) for a,b,c,d in ss)\n ymin=min(min(b,d) for a,b,c,d in ss); ymax=max(max(b,d) for a,b,c,d in ss)\n W=180; H=max(1,round((ymax-ymin)/(xmax-xmin)*W*.5)); g=[[' ']*W for _ in range(H)]\n def p(X,Y):\n  ix=round((X-xmin)/(xmax-xmin)*(W-1)) if xmax>xmin else 0; iy=round((ymax-Y)/(ymax-ymin)*(H-1)) if ymax>ymin else 0\n  if 0<=ix<W and 0<=iy<H:g[iy][ix]='#'\n for a,b,c,d in ss:\n  n=max(1,round(math.hypot(c-a,d-b)*W/(xmax-xmin)*4))\n  for i in range(n+1):p(a+(c-a)*i/n,b+(d-b)*i/n)\n print('\\n=== Z',key,'n',len(ss),'bbox',round(xmin,1),round(xmax,1),round(ymin,1),round(ymax,1),'===')\n print('\\n'.join(''.join(r).rstrip() for r in g))\nPY\npython3 /tmp/layers.py\n"] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ["python3 /tmp/layers.py > /tmp/layers.out; grep '^layers:' /tmp/layers.out; grep '^=== Z' /tmp/layers.out | tail -30\n"] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ["python3 - <<'PY'\nimport re\ns=open('/app/text.gcode').read().splitlines(); obj=-1; x=y=z=0.; d={}\nfor q in s:\n t=q.strip()\n if t.startswith('M486'):\n  m=re.match(r'M486\\s+S(-?\\d+)',t)\n  if m: obj=int(m.group(1))\n  continue\n if not (t.startswith('G0') or t.startswith('G1')): continue\n v={k:float(n) for k,n in re.findall(r'([XYZE])(-?(?:\\d+\\.?\\d*|\\.\\d+))',t)}; nx=v.get('X',x); ny=v.get('Y',y); nz=v.get('Z',z)\n if obj==0 and v.get('E',0)>0 and ('X'in v or 'Y'in v):\n  d.setdefault(round(nz,2),[]).append((x,y,nx,ny))\n x,y,z=nx,ny,nz\nfor k in sorted(d)[-25:]:\n a=d[k]; xs=[q for p in a for q in (p[0],p[2])]; ys=[q for p in a for q in (p[1],p[3])]\n print(k,len(a),round(min(xs),1),round(max(xs),1),round(min(ys),1),round(max(ys),1))\nPY\n"] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['python3 - <<\'PY\'\nexec(open(\'/tmp/layers.py\').read().split("for key in keys[-12:]:")[0])\nfor k in [0.2,1.6,3.0,5.8,8.6,11.4,14.2,18.4,22.6,27.0,32.4,36.6,40.8,45.0,49.2,53.4,57.6,60.4,62.9]:\n if k in layers:\n  a=layers[k]; xs=[v for p in a for v in (p[0],p[2])]; ys=[v for p in a for v in (p[1],p[3])]\n  print(k,len(a),round(min(xs),2),round(max(xs),2),round(min(ys),2),round(max(ys),2))\nPY\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['cat > /tmp/one.py <<\'PY\'\nexec(open(\'/tmp/layers.py\').read().split("for key in keys[-12:]:")[0])\nimport sys,math\nkey=round(float(sys.argv[1]),2); ss=layers[key]\nxs=[v for p in ss for v in (p[0],p[2])]; ys=[v for p in ss for v in (p[1],p[3])]; xmin,xmax=min(xs),max(xs); ymin,ymax=min(ys),max(ys)\nW=140; H=max(1,round((ymax-ymin)/(xmax-xmin)*W*.5)); g=[[\' \']*W for _ in range(H)]\ndef p(x,y):\n i=round((x-xmin)/(xmax-xmin)*(W-1)); j=round((ymax-y)/(ymax-ymin)*(H-1))\n if 0<=i<W and 0<=j<H:g[j][i]=\'#\'\nfor a,b,c,d in ss:\n n=max(1,round(math.hypot(c-a,d-b)*W/(xmax-xmin)*5))\n for q in range(n+1):p(a+(c-a)*q/n,b+(d-b)*q/n)\nprint(\'Z\',key,\'bbox\',xmin,xmax,ymin,ymax)\nprint(\'\\n\'.join(\'\'.join(r).rstrip() for r in g))\nPY\nfor z in 8.6 22.6 36.6 49.2 57.6; do echo "===== $z ====="; python3 /tmp/one.py $z | tail -35; done\n'] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ["cat > /tmp/project.py <<'PY'\nimport re,math\nobj=-1;x=y=z=0.; seg=[]; byz={}\nfor line in open('/app/text.gcode',errors='ignore'):\n s=line.strip()\n if s.startswith('M486'):\n  m=re.match(r'M486\\s+S(-?\\d+)',s)\n  if m: obj=int(m.group(1))\n  continue\n if not(s.startswith('G0') or s.startswith('G1')): continue\n v={k:float(n) for k,n in re.findall(r'([XYZE])(-?(?:\\d+\\.?\\d*|\\.\\d+))',s)}\n nx=v.get('X',x);ny=v.get('Y',y);nz=v.get('Z',z)\n if obj==0 and v.get('E',0)>0 and ('X'in v or 'Y'in v):\n  seg.append((x,y,z,nx,ny,nz)); byz.setdefault(round(nz,2),[]).append((x,y,nx,ny))\n x,y,z=nx,ny,nz\n# fit center x/y versus z using layer bounding box centers\npts=[]\nfor zz,a in byz.items():\n xs=[q for p in a for q in (p[0],p[2])];ys=[q for p in a for q in (p[1],p[3])]\n pts.append((zz,(min(xs)+max(xs))/2,(min(ys)+max(ys))/2))\ndef fit(i):\n mz=sum(p[0] for p in pts)/len(pts); mv=sum(p[i] for p in pts)/len(pts)\n return sum((p[0]-mz)*(p[i]-mv) for p in pts)/sum((p[0]-mz)**2 for p in pts)\na=fit(1);b=fit(2);print('shift slopes',a,b)\n# project onto coordinates u=x-a*z, v=y-b*z\nss=[]\nfor x,y,z,X,Y,Z in seg:ss.append((x-a*z,y-b*z,X-a*Z,Y-b*Z))\nxs=[q for p in ss for q in (p[0],p[2])];ys=[q for p in ss for q in (p[1],p[3])];xmin,xmax=min(xs),max(xs);ymin,ymax=min(ys),max(ys)\nprint('projected bbox',xmin,xmax,ymin,ymax)\nW=220;H=max(1,round((ymax-ymin)/(xmax-xmin)*W*.5));g=[[' ']*W for _ in range(H)]\ndef p(x,y):\n i=round((x-xmin)/(xmax-xmin)*(W-1));j=round((ymax-y)/(ymax-ymin)*(H-1))\n if 0<=i<W and 0<=j<H:g[j][i]='#'\nfor x,y,X,Y in ss:\n n=max(1,round(math.hypot(X-x,Y-y)*W/(xmax-xmin)*4))\n for k in range(n+1):p(x+(X-x)*k/n,y+(Y-y)*k/n)\nprint('\\n'.join(''.join(r).rstrip() for r in g))\nPY\npython3 /tmp/project.py\n"] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['cat > /tmp/bands.py <<\'PY\'\nexec(open(\'/tmp/project.py\').read().split("# project onto coordinates")[0])\n# derive linear center shifts\npts=[]\nfor zz,a0 in byz.items():\n xs=[q for p in a0 for q in (p[0],p[2])]; ys=[q for p in a0 for q in (p[1],p[3])]\n pts.append((zz,(min(xs)+max(xs))/2,(min(ys)+max(ys))/2))\ndef fit(i):\n mz=sum(p[0] for p in pts)/len(pts); mv=sum(p[i] for p in pts)/len(pts)\n return sum((p[0]-mz)*(p[i]-mv) for p in pts)/sum((p[0]-mz)**2 for p in pts)\na,b=fit(1),fit(2); print(\'slopes\',a,b)\nfor cutoff in [55,60,63,64]:\n ss=[]\n for x,y,z,X,Y,Z in seg:\n  if z>=cutoff or Z>=cutoff: ss.append((x-a*z,y-b*z,X-a*Z,Y-b*Z))\n xs=[q for p in ss for q in (p[0],p[2])];ys=[q for p in ss for q in (p[1],p[3])]\n xmin,xmax,ymin,ymax=min(xs),max(xs),min(ys),max(ys); W=180; H=max(1,round((ymax-ymin)/(xmax-xmin)*W*.5));g=[[\' \']*W for _ in range(H)]\n def put(x,y):\n  i=round((x-xmin)/(xmax-xmin)*(W-1));j=round((ymax-y)/(ymax-ymin)*(H-1))\n  if 0<=i<W and 0<=j<H:g[j][i]=\'#\'\n for x,y,X,Y in ss:\n  put(x,y);put(X,Y)\n print(\'\\n=== CUTOFF\',cutoff,\'segments\',len(ss),\'bbox\',round(xmin,1),round(xmax,1),round(ymin,1),round(ymax,1),\'===\')\n print(\'\\n\'.join(\'\'.join(r).rstrip() for r in g))\nPY\npython3 /tmp/bands.py\n'] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['python3 - <<\'PY\'\n# extract and report the projection parameters from the existing script without printing its raster\ns=open(\'/tmp/project.py\').read(); s=s.replace("print(\'\\\\n\'.join(\'\'.join(r).rstrip() for r in g))", "pass")\nexec(s)\nPY\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ["cat > /tmp/dense.py <<'PY'\nimport re,math\nobj=-1;x=y=z=0.; seg=[]; byz={}\nfor line in open('/app/text.gcode',errors='ignore'):\n s=line.strip()\n if s.startswith('M486'):\n  m=re.match(r'M486\\s+S(-?\\d+)',s)\n  if m: obj=int(m.group(1))\n  continue\n if not(s.startswith('G0') or s.startswith('G1')):continue\n v={k:float(n) for k,n in re.findall(r'([XYZE])(-?(?:\\d+\\.?\\d*|\\.\\d+))',s)};X=v.get('X',x);Y=v.get('Y',y);Z=v.get('Z',z)\n if obj==0 and v.get('E',0)>0 and ('X'in v or 'Y'in v):seg.append((x,y,z,X,Y,Z));byz.setdefault(round(z,2),[]).append((x,y,X,Y))\n x,y,z=X,Y,Z\np=[]\nfor zz,a0 in byz.items():\n xx=[q for q in a0 for q in(q[0],q[2])];yy=[q for q in a0 for q in(q[1],q[3])];p.append((zz,(min(xx)+max(xx))/2,(min(yy)+max(yy))/2))\ndef f(i):\n mz=sum(q[0] for q in p)/len(p);mv=sum(q[i] for q in p)/len(p);return sum((q[0]-mz)*(q[i]-mv) for q in p)/sum((q[0]-mz)**2 for q in p)\na,b=f(1),f(2);print('slopes',a,b)\n# projected coordinates; use fine grid and density, rather than drawing every segment as filled strokes\nP=[(x-a*z,y-b*z,X-a*Z,Y-b*Z) for x,y,z,X,Y,Z in seg]\nxs=[q for r in P for q in(r[0],r[2])];ys=[q for r in P for q in(r[1],r[3])];xmin,xmax=min(xs),max(xs);ymin,ymax=min(ys),max(ys)\nW=240;H=max(1,round((ymax-ymin)/(xmax-xmin)*W*.55)); grid=[[0]*W for _ in range(H)]\ndef put(x,y):\n i=round((x-xmin)/(xmax-xmin)*(W-1));j=round((ymax-y)/(ymax-ymin)*(H-1))\n if 0<=i<W and 0<=j<H:grid[j][i]+=1\nfor x,y,X,Y in P:\n n=max(1,round(math.hypot(X-x,Y-y)*W/(xmax-xmin)*2))\n for k in range(n+1):put(x+(X-x)*k/n,y+(Y-y)*k/n)\n# print thresholded density, retaining gaps\nprint('bbox',xmin,xmax,ymin,ymax,'size',W,H)\nfor r in grid:\n print(''.join('#' if q>=2 else ('+' if q else ' ') for q in r).rstrip())\nPY\npython3 /tmp/dense.py\n"] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 5.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ["cat > /tmp/surface.py <<'PY'\nimport re,math\nobj=-1;x=y=z=0.; seg=[]; byz={}\nfor line in open('/app/text.gcode',errors='ignore'):\n s=line.strip()\n if s.startswith('M486'):\n  m=re.match(r'M486\\s+S(-?\\d+)',s)\n  if m: obj=int(m.group(1))\n  continue\n if not(s.startswith('G0') or s.startswith('G1')): continue\n v={k:float(n) for k,n in re.findall(r'([XYZE])(-?(?:\\d+\\.?\\d*|\\.\\d+))',s)}\n X=v.get('X',x);Y=v.get('Y',y);Z=v.get('Z',z)\n if obj==0 and v.get('E',0)>0 and ('X'in v or 'Y'in v): seg.append((x,y,z,X,Y,Z));byz.setdefault(round(z,2),[]).append((x,y,X,Y))\n x,y,z=X,Y,Z\np=[]\nfor zz,a0 in byz.items():\n xx=[q for a in a0 for q in(a[0],a[2])]; yy=[q for a in a0 for q in(a[1],a[3])];p.append((zz,(min(xx)+max(xx))/2,(min(yy)+max(yy))/2))\ndef fit(i):\n mz=sum(q[0] for q in p)/len(p);mv=sum(q[i] for q in p)/len(p)\n return sum((q[0]-mz)*(q[i]-mv) for q in p)/sum((q[0]-mz)**2 for q in p)\na,b=fit(1),fit(2)\n# use projected u,v and a high-resolution max-Z map\nP=[]\nfor x,y,z,X,Y,Z in seg:\n P.append((x-a*z,y-b*z,z));P.append((X-a*Z,Y-b*Z,Z))\nxs=[q[0] for q in P];ys=[q[1] for q in P];xmin,xmax=min(xs),max(xs);ymin,ymax=min(ys),max(ys)\nW=240;H=max(1,round((ymax-ymin)/(xmax-xmin)*W*.55)); mx=[[-1e9]*W for _ in range(H)]\nfor u,v,z in P:\n i=round((u-xmin)/(xmax-xmin)*(W-1));j=round((ymax-v)/(ymax-ymin)*(H-1))\n if 0<=i<W and 0<=j<H and z>mx[j][i]:mx[j][i]=z\nprint('slopes',a,b,'grid',W,H,'zrange',min(z for u,v,z in P),max(z for u,v,z in P))\nfor tol in [0.15,0.4,0.8]:\n print('\\n=== surface tolerance',tol,'===')\n for row in mx:\n  top=max(q for q in row if q>-1e8) if any(q>-1e8 for q in row) else -1e9\n  print(''.join('#' if q>=top-tol else ' ' for q in row).rstrip())\nPY\npython3 /tmp/surface.py\n"] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ["cat > /tmp/pca.py <<'PY'\nimport re,math\nobj=-1;x=y=z=0.; pts=[]\nfor line in open('/app/text.gcode',errors='ignore'):\n s=line.strip()\n if s.startswith('M486'):\n  m=re.match(r'M486\\s+S(-?\\d+)',s)\n  if m:obj=int(m.group(1))\n  continue\n if not(s.startswith('G0') or s.startswith('G1')):continue\n v={k:float(n) for k,n in re.findall(r'([XYZE])(-?(?:\\d+\\.?\\d*|\\.\\d+))',s)};X=v.get('X',x);Y=v.get('Y',y);Z=v.get('Z',z)\n if obj==0 and v.get('E',0)>0 and ('X'in v or 'Y'in v):pts += [(x,y,z),(X,Y,Z)]\n x,y,z=X,Y,Z\n# covariance and power iteration with deflation\nn=len(pts); c=[sum(p[j] for p in pts)/n for j in range(3)]\nA=[[sum((p[i]-c[i])*(p[j]-c[j]) for p in pts)/n for j in range(3)] for i in range(3)]\ndef eig(A):\n v=[1.,.7,.3]\n for _ in range(100):\n  w=[sum(A[i][j]*v[j] for j in range(3)) for i in range(3)]; q=math.sqrt(sum(t*t for t in w));v=[t/q for t in w]\n lam=sum(v[i]*sum(A[i][j]*v[j] for j in range(3)) for i in range(3));return lam,v\nl1,v1=eig(A);B=[[A[i][j]-l1*v1[i]*v1[j] for j in range(3)] for i in range(3)];l2,v2=eig(B)\nprint('center',c,'eigenvalues',l1,l2,'axes',v1,v2)\nQ=[]\nfor p in pts:\n d=[p[i]-c[i] for i in range(3)];Q.append((sum(d[i]*v1[i] for i in range(3)),sum(d[i]*v2[i] for i in range(3)),p[2]))\nfor mode in ['all','top']:\n R=[q for q in Q if mode=='all' or q[2]>=sorted(t[2] for t in Q)[int(.9*len(Q))]]\n xs=[q[0] for q in R];ys=[q[1] for q in R];xmin,xmax=min(xs),max(xs);ymin,ymax=min(ys),max(ys);W=220;H=max(1,round((ymax-ymin)/(xmax-xmin)*W*.5));g=[[0]*W for _ in range(H)]\n for u,v,z0 in R:\n  i=round((u-xmin)/(xmax-xmin)*(W-1));j=round((ymax-v)/(ymax-ymin)*(H-1))\n  if 0<=i<W and 0<=j<H:g[j][i]+=1\n print('\\n===',mode,'bbox',xmin,xmax,ymin,ymax,'===')\n for row in g:print(''.join('#' if q>=2 else ('+' if q else ' ') for q in row).rstrip())\nPY\npython3 /tmp/pca.py\n"] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 3.0 max_timeout_sec: 180.0
+Sending keys: ["python3 /tmp/pca.py > /tmp/pca.out; grep -n '^===' /tmp/pca.out; tail -45 /tmp/pca.out\n"] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-c\n'] min_timeout_sec: 0.2 max_timeout_sec: 180.0
+Sending keys: ["python3 /tmp/pca.py > /tmp/pca.out 2>&1; awk '/=== top/{f=1} f' /tmp/pca.out | head -40\n"] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 5.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-c\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ['ps -eo pid,stat,cmd | tail -20; wc -l -c /tmp/pca.out 2>/dev/null || true; head -5 /tmp/pca.out 2>/dev/null || true\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-cC-d\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ['exec bash\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ["printf 'READY\\n'; pwd; wc -l -c /app/text.gcode /tmp/pca.out 2>/dev/null || true\n"] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-c\n\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['echo SHELL_OK\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-cC-cC-c\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: [':\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ['echo RECOVERED\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Parser warnings: - Command 1 should end with newline when followed by another command. Otherwise the two commands will be concatenated together on the same line.
+Sending keys: ['C-d'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ["/bin/sh -c 'echo NEW_SHELL; ls -l /app/text.gcode /app/out.txt 2>/dev/null || true'\n"] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-z\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['C-\\\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ['echo PTY_TEST\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-d\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['C-c\n/bin/bash --noprofile --norc\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['echo PTY_RECOVERED\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-c\nC-c\nreset\n'] min_timeout_sec: 2.0 max_timeout_sec: 180.0
+Sending keys: ['echo RESET_OK\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: [''] min_timeout_sec: 10.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-c\nstty sane\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ["printf 'PTY_OK\\n'\n"] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Parser warnings: - Command 1 should end with newline when followed by another command. Otherwise the two commands will be concatenated together on the same line.
+Sending keys: ['C-q'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['echo FLOW_OK\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-c\n\n/bin/sh -c "printf \'RECOVERY\\n\'"\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-d\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['/bin/bash -i\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['echo SHELL_ALIVE\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Parser warnings: - Command 1 should end with newline when followed by another command. Otherwise the two commands will be concatenated together on the same line.
+Sending keys: ['C-bc'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['echo NEW_PANE\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-bc\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['echo NEW_PANE_OK\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-bd\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['echo DETACHED_OK\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Parser warnings: - Command 1 should end with newline when followed by another command. Otherwise the two commands will be concatenated together on the same line.
+Sending keys: ['C-b'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ['d\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['C-c\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ['echo TERMINAL_TEST\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-cC-cC-c\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ['kill -9 $$\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['exec /bin/bash --noprofile --norc\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Sending keys: ['echo FRESH_SHELL\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ["printf '%s\\n' '--- markers ---'; grep -n '^===' /tmp/pca.out 2>/dev/null || true; printf '%s\\n' '--- output size ---'; wc -l -c /tmp/pca.out 2>/dev/null || true; printf '%s\\n' '--- top section ---'; awk '/=== top/{f=1} f' /tmp/pca.out 2>/dev/null | head -35\n"] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ["grep -n '^===' /tmp/pca.out 2>/dev/null; wc -l -c /tmp/pca.out 2>/dev/null\n"] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['python3 -c "p=\'/tmp/pca.out\'; import os; print(os.path.getsize(p) if os.path.exists(p) else \'NO_FILE\'); print(\'\\\\n\'.join(x.rstrip() for x in open(p) if x.startswith((\'center\',\'eigen\',\'===\',\'bbox\')))) if os.path.exists(p) else None"\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['C-c\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ["printf 'OK\\n'\n"] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Sending keys: ['\n'] min_timeout_sec: 0.5 max_timeout_sec: 180.0
+Sending keys: ['python3 -c \'import re; s=open("/app/text.gcode",errors="ignore").read(); print("\\n".join(sorted(set(re.findall(r"[A-Za-z][A-Za-z0-9 _-]{2,}",s)))))\'\n'] min_timeout_sec: 1.0 max_timeout_sec: 180.0
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Trajectory dumped to jobs/p1-terminus-2-gcode-to-text-r2/gcode-to-text__wYkpbmT/agent/trajectory.json
+Collecting main service artifacts
+Exception AgentTimeoutError is in exclude_exceptions, not retrying
+Not retrying trial because the exception is not in include_exceptions or the maximum number of retries has been reached

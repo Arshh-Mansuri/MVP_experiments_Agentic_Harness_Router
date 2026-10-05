@@ -1,0 +1,391 @@
+[?2004hroot@4904fd46f657:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@4904fd46f657:/app# clear
+[?2004l[H[J[3J[?2004hroot@4904fd46f657:/app# ls -lh /data/source_a/users.json /data/source_b/users.csv /data/source_c/users.parquet && printf '\n--- JSON ---\n' && head -c 2000 /data/source_a/users.json && printf '\n\n--- CSV ---\n' && head -n 10 /data/source_b/users.csv && printf '\n\n--- PARQUET INFO ---\n' && python3 - <<'PY'
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> p='/data/source_c/users.parquet'
+[?2004l[?2004h> try:
+[?2004l[?2004h>     df=pd.read_parquet(p)
+[?2004l[?2004h>     print(df.dtypes)
+[?2004l[?2004h>     print(df.head().to_string(index=False))
+[?2004l[?2004h> except Exception as e:
+[?2004l[?2004h>     print(type(e).__name__, e)
+[?2004l[?2004h> PY
+[?2004l-rw-r--r-- 1 root root  291 Oct 24  2025 /data/source_a/users.json
+-rw-r--r-- 1 root root  129 Oct 24  2025 /data/source_b/users.csv
+-rw-r--r-- 1 root root 3.6K Oct 24  2025 /data/source_c/users.parquet
+
+--- JSON ---
+[
+  {
+    "id": 101,
+    "full_name": "John Doe",
+    "email": "john@a.com",
+    "registration_date": "2024-01-15",
+    "status": "active"
+  },
+  {
+    "id": 102,
+    "full_name": "Jane Smith",
+    "email": "jane@a.com",
+    "registration_date": "2024-02-20",
+    "status": "inactive"
+  }
+]
+
+
+--- CSV ---
+user_id,name,email_address,created_at,is_active
+101,John Doe,john@b.com,2024-01-10,true
+103,Bob Wilson,bob@b.com,2024-03-01,true
+
+
+--- PARQUET INFO ---
+python3 - <<'PY'
+import importlib.util
+for m in ['pandas','pyarrow','fastparquet']:
+    print(m, bool(importlib.util.find_spec(m)))
+PY
+userId       int64
+userName    object
+email       object
+joined      object
+active        bool
+dtype: object
+ userId    userName       email     joined  active
+    101     John D.  john@c.com 2024-01-20    True
+    104 Alice Brown alice@c.com 2024-04-01    True
+[?2004hroot@4904fd46f657:/app# python3 - <<'PY'
+[?2004l[?2004h> import importlib.util
+[?2004l[?2004h> for m in ['pandas','pyarrow','fastparquet']:
+[?2004l[?2004h>     print(m, bool(importlib.util.find_spec(m)))
+[?2004l[?2004h> PY
+[?2004lpandas True
+pyarrow True
+fastparquet False
+[?2004hroot@4904fd46f657:/app# cat > /app/merge_users.py <<'PY'
+[?2004lmail', 'created_date', 'status']:[?2004h> import json
+[?2004l[?2004h> from datetime import datetime
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> 
+[?2004l[?2004h> OUT_PARQUET = Path('/app/merged_users.parquet')
+[?2004l[?2004h> OUT_CONFLICTS = Path('/app/conflicts.json')
+[?2004l[?2004h> SOURCES = ['source_a', 'source_b', 'source_c']
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def missing(value):
+[?2004l[?2004h>     if value is None:
+[?2004l[?2004h>         return True
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         return bool(pd.isna(value))
+[?2004l[?2004h>     except (TypeError, ValueError):
+[?2004l[?2004h>         return False
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def clean_text(value):
+[?2004l[?2004h>     if missing(value):
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     value = str(value).strip()
+[?2004l[?2004h>     return value if value else None
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def normalize_date(value):
+[?2004l[?2004h>     value = clean_text(value)
+[?2004l[?2004h>     if value is None:
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     parsed = pd.to_datetime(value, errors='coerce')
+[?2004l[?2004h>     if pd.isna(parsed):
+[?2004l[?2004h>         raise ValueError(f'Invalid date: {value!r}')
+[?2004l[?2004h>     return parsed.strftime('%Y-%m-%d')
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def normalize_status(value):
+[?2004l[?2004h>     if missing(value):
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     if isinstance(value, bool):
+[?2004l[?2004h>         return 'active' if value else 'inactive'
+[?2004l[?2004h>     text = str(value).strip().lower()
+[?2004l[?2004h>     if text in {'true', '1', 'yes', 'y', 'active'}:
+[?2004l[?2004h>         return 'active'
+[?2004l[?2004h>     if text in {'false', '0', 'no', 'n', 'inactive'}:
+[?2004l[?2004h>         return 'inactive'
+[?2004l[?2004h>     return text
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def read_source(name):
+[?2004l[?2004h>     if name == 'source_a':
+[?2004l[?2004h>         rows = json.loads(Path('/data/source_a/users.json').read_text())
+[?2004l[?2004h>         frame = pd.DataFrame(rows)
+[?2004l[?2004h>         mapping = {'id': 'user_id', 'full_name': 'name', 'email': 'email',
+[?2004l[?2004h>                    'registration_date': 'created_date', 'status': 'status'}
+[?2004l[?2004h>     elif name == 'source_b':
+[?2004l[?2004h>         frame = pd.read_csv('/data/source_b/users.csv')
+[?2004l[?2004h>         mapping = {'user_id': 'user_id', 'name': 'name', 'email_address': 'email',
+[?2004l[?2004h>                    'created_at': 'created_date', 'is_active': 'status'}
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         frame = pd.read_parquet('/data/source_c/users.parquet')
+[?2004l[?2004h>         mapping = {'userId': 'user_id', 'userName': 'name', 'email': 'email',
+[?2004l[?2004h>                    'joined': 'created_date', 'active': 'status'}
+[?2004l[?2004h>     frame = frame.rename(columns=mapping)
+[?2004l[?2004h>     for col in ['user_id', 'name', 'email', 'created_date', 'status']:
+[?2004l[?2004h>         if col not in frame.columns:
+[?2004l[?2004h>             frame[col] = None
+[?2004l[?2004h>     normalized = []
+[?2004l[?2004h>     for _, row in frame.iterrows():
+[?2004l[?2004h>         uid = row['user_id']
+[?2004l[?2004h>         if missing(uid):
+[?2004l[?2004h>             continue
+[?2004l[?2004h>         uid = int(uid)
+[?2004l[?2004h>         normalized.append({
+[?2004l[?2004h>             'user_id': uid,
+[?2004l[?2004h>             'name': clean_text(row['name']),
+[?2004l[?2004h>             'email': clean_text(row['email']),
+[?2004l[?2004h>             'created_date': normalize_date(row['created_date']),
+[?2004l[?2004h>             'status': normalize_status(row['status']),
+[?2004l[?2004h>         })
+[?2004l[?2004h>     return normalized
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> records_by_source = {source: read_source(source) for source in SOURCES}
+[?2004l[?2004h> by_user = {}
+[?2004l[?2004h> for source in SOURCES:
+[?2004l[?2004h>     for record in records_by_source[source]:
+[?2004l[?2004h>         by_user.setdefault(record['user_id'], {})[source] = record
+[?2004l[?2004h> 
+[?2004l[?2004h> fields = ['name', 'email', 'created_date', 'status']
+[?2004l[?2004h> merged = []
+[?2004l[?2004h> conflicts = []
+[?2004l[?2004h> 
+[?2004l[?2004h> for user_id in sorted(by_user):
+[?2004l[?2004h>     source_records = by_user[user_id]
+[?2004l[?2004h>     result = {'user_id': user_id}
+[?2004l[?2004h>     for field in fields:
+[?2004l[?2004h>         values = {source: source_records[source].get(field)
+[?2004l[?2004h>                   for source in SOURCES if source in source_records}
+[?2004l[?2004h>         distinct = set(values.values()) - {None}
+[?2004l[?2004h>         if len(distinct) > 1:
+[?2004l[?2004h>             report_values = {source: values[source] for source in SOURCES
+[?2004l[?2004h>                              if source in values and values[source] is not None}
+[?2004l[?2004h>             selected = next((values[source] for source in SOURCES
+[?2004l[?2004h>                              if source in values and values[source] is not None), None)
+[?2004l[?2004h>             conflicts.append({
+[?2004l[?2004h>                 'user_id': user_id,
+[?2004l[?2004h>                 'field': field,
+[?2004l[?2004h>                 'values': report_values,
+[?2004l[?2004h>                 'selected': selected,
+[?2004l[?2004h>             })
+[?2004l[?2004h>         result[field] = next((values[source] for source in SOURCES
+[?2004l[?2004h>                               if source in values and values[source] is not None), None)
+[?2004l[?2004h>     merged.append(result)
+[?2004l[?2004h> 
+[?2004l[?2004h> output = pd.DataFrame(merged, columns=['user_id', 'name', 'email', 'created_date', 'status'])
+[?2004l[?2004h> output['user_id'] = output['user_id'].astype('int64')
+[?2004l[?2004h> for col in ['name', 'email', 'created_date', 'status']:
+[?2004l[?2004h>     output[col] = output[col].astype('string')
+[?2004l[?2004h> output.to_parquet(OUT_PARQUET, engine='pyarrow', index=False)
+[?2004l[?2004h> OUT_CONFLICTS.write_text(json.dumps({
+[?2004l[?2004h>     'total_conflicts': len(conflicts),
+[?2004l[?2004h>     'conflicts': conflicts,
+[?2004l[?2004h> }, indent=2) + '\n')
+[?2004l[?2004h> print(f'wrote {len(output)} users and {len(conflicts)} conflicts')
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@4904fd46f657:/app# python3 /app/merge_users.py
+[?2004lpython3 - <<'PY'
+import json
+from pathlib import Path
+import pandas as pd
+
+p = '/app/merged_users.parquet'
+c = '/app/conflicts.json'
+df = pd.read_parquet(p)
+report = json.loads(Path(c).read_text())
+print('parquet shape:', df.shape)
+print('parquet dtypes:')
+print(df.dtypes.to_string())
+print('rows:')
+print(df.to_string(index=False))
+print('conflict count:', report['total_conflicts'], 'listed:', len(report['conflicts']))
+assert report['total_conflicts'] == len(report['conflicts'])
+assert df['user_id'].dtype == 'int64'
+assert df['user_id'].is_unique
+assert all(df['created_date'].dropna().str.fullmatch(r'\d{4}-\d{2}-\d{2}'))
+print('validation: OK')
+PY
+ls -lh /app/merged_users.parquet /app/conflicts.json && cat /app/conflicts.json
+wrote 4 users and 3 conflicts
+[?2004hroot@4904fd46f657:/app# python3 - <<'PY'
+[?2004l[?2004h> import json
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> 
+[?2004l[?2004h> p = '/app/merged_users.parquet'
+[?2004l[?2004h> c = '/app/conflicts.json'
+[?2004l[?2004h> df = pd.read_parquet(p)
+[?2004l[?2004h> report = json.loads(Path(c).read_text())
+[?2004l[?2004h> print('parquet shape:', df.shape)
+[?2004l[?2004h> print('parquet dtypes:')
+[?2004l[?2004h> print(df.dtypes.to_string())
+[?2004l[?2004h> print('rows:')
+[?2004l[?2004h> print(df.to_string(index=False))
+[?2004l[?2004h> print('conflict count:', report['total_conflicts'], 'listed:', len(report['conflicts']))
+[?2004l[?2004h> assert report['total_conflicts'] == len(report['conflicts'])
+[?2004l[?2004h> assert df['user_id'].dtype == 'int64'
+[?2004l[?2004h> assert df['user_id'].is_unique
+[?2004l[?2004h> assert all(df['created_date'].dropna().str.fullmatch(r'\d{4}-\d{2}-\d{2}'))
+[?2004l[?2004h> print('validation: OK')
+[?2004l[?2004h> PY
+[?2004lparquet shape: (4, 5)
+parquet dtypes:
+user_id                  int64
+name            string[python]
+email           string[python]
+created_date    string[python]
+status          string[python]
+rows:
+ user_id        name       email created_date   status
+     101    John Doe  john@a.com   2024-01-15   active
+     102  Jane Smith  jane@a.com   2024-02-20 inactive
+     103  Bob Wilson   bob@b.com   2024-03-01   active
+     104 Alice Brown alice@c.com   2024-04-01   active
+conflict count: 3 listed: 3
+validation: OK
+[?2004hroot@4904fd46f657:/app# ls -lh /app/merged_users.parquet /app/conflicts.json && cat /app/conflicts.json
+[?2004l-rw-r--r-- 1 root root  699 Oct  3 13:30 /app/conflicts.json
+-rw-r--r-- 1 root root 3.7K Oct  3 13:30 /app/merged_users.parquet
+{
+  "total_conflicts": 3,
+  "conflicts": [
+    {
+      "user_id": 101,
+      "field": "name",
+      "values": {
+        "source_a": "John Doe",
+        "source_b": "John Doe",
+        "source_c": "John D."
+      },
+      "selected": "John Doe"
+    },
+    {
+      "user_id": 101,
+      "field": "email",
+      "values": {
+        "source_a": "john@a.com",
+        "source_b": "john@b.com",
+        "source_c": "john@c.com"
+      },
+      "selected": "john@a.com"
+    },
+    {
+      "user_id": 101,
+      "field": "created_date",
+      "values": {
+        "source_a": "2024-01-15",
+        "source_b": "2024-01-10",
+        "source_c": "2024-01-20"
+      },
+      "selected": "2024-01-15"
+    }
+  ]
+}
+[?2004hroot@4904fd46f657:/app# python3 /app/merge_users.py
+[?2004lpython3 - <<'PY'
+import json
+from pathlib import Path
+import pandas as pd
+
+parquet = '/app/merged_users.parquet'
+conflicts_file = '/app/conflicts.json'
+df = pd.read_parquet(parquet)
+report = json.loads(Path(conflicts_file).read_text())
+print('shape:', df.shape)
+print('columns:', list(df.columns))
+print('dtypes:\n' + df.dtypes.to_string())
+print(df.to_string(index=False))
+print('conflicts:', report['total_conflicts'], 'listed:', len(report['conflicts']))
+assert list(df.columns) == ['user_id', 'name', 'email', 'created_date', 'status']
+assert str(df['user_id'].dtype) == 'int64'
+assert df['user_id'].is_unique
+assert report['total_conflicts'] == len(report['conflicts'])
+assert all(df['created_date'].dropna().str.fullmatch(r'\d{4}-\d{2}-\d{2}'))
+print('validation: OK')
+PY
+ls -lh /app/merged_users.parquet /app/conflicts.json && cat /app/conflicts.json
+wrote 4 users and 3 conflicts
+[?2004hroot@4904fd46f657:/app# python3 - <<'PY'
+[?2004l[?2004h> import json
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> 
+[?2004l[?2004h> parquet = '/app/merged_users.parquet'
+[?2004l[?2004h> conflicts_file = '/app/conflicts.json'
+[?2004l[?2004h> df = pd.read_parquet(parquet)
+[?2004l[?2004h> report = json.loads(Path(conflicts_file).read_text())
+[?2004l[?2004h> print('shape:', df.shape)
+[?2004l[?2004h> print('columns:', list(df.columns))
+[?2004l[?2004h> print('dtypes:\n' + df.dtypes.to_string())
+[?2004l[?2004h> print(df.to_string(index=False))
+[?2004l[?2004h> print('conflicts:', report['total_conflicts'], 'listed:', len(report['conflicts']))
+[?2004l[?2004h> assert list(df.columns) == ['user_id', 'name', 'email', 'created_date', 'status']
+[?2004l[?2004h> assert str(df['user_id'].dtype) == 'int64'
+[?2004l[?2004h> assert df['user_id'].is_unique
+[?2004l[?2004h> assert report['total_conflicts'] == len(report['conflicts'])
+[?2004l[?2004h> assert all(df['created_date'].dropna().str.fullmatch(r'\d{4}-\d{2}-\d{2}'))
+[?2004l[?2004h> print('validation: OK')
+[?2004l[?2004h> PY
+[?2004lshape: (4, 5)
+columns: ['user_id', 'name', 'email', 'created_date', 'status']
+dtypes:
+user_id                  int64
+name            string[python]
+email           string[python]
+created_date    string[python]
+status          string[python]
+ user_id        name       email created_date   status
+     101    John Doe  john@a.com   2024-01-15   active
+     102  Jane Smith  jane@a.com   2024-02-20 inactive
+     103  Bob Wilson   bob@b.com   2024-03-01   active
+     104 Alice Brown alice@c.com   2024-04-01   active
+conflicts: 3 listed: 3
+validation: OK
+[?2004hroot@4904fd46f657:/app# ls -lh /app/merged_users.parquet /app/conflicts.json && cat /app/conflicts.json
+[?2004l-rw-r--r-- 1 root root  699 Oct  3 13:30 /app/conflicts.json
+-rw-r--r-- 1 root root 3.7K Oct  3 13:30 /app/merged_users.parquet
+{
+  "total_conflicts": 3,
+  "conflicts": [
+    {
+      "user_id": 101,
+      "field": "name",
+      "values": {
+        "source_a": "John Doe",
+        "source_b": "John Doe",
+        "source_c": "John D."
+      },
+      "selected": "John Doe"
+    },
+    {
+      "user_id": 101,
+      "field": "email",
+      "values": {
+        "source_a": "john@a.com",
+        "source_b": "john@b.com",
+        "source_c": "john@c.com"
+      },
+      "selected": "john@a.com"
+    },
+    {
+      "user_id": 101,
+      "field": "created_date",
+      "values": {
+        "source_a": "2024-01-15",
+        "source_b": "2024-01-10",
+        "source_c": "2024-01-20"
+      },
+      "selected": "2024-01-15"
+    }
+  ]
+}
+[?2004hroot@4904fd46f657:/app# 

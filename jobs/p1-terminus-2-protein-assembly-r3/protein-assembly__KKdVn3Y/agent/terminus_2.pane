@@ -1,0 +1,1739 @@
+[?2004hroot@800fdd991a01:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@800fdd991a01:/app# clear
+[?2004l[H[J[3J[?2004hroot@800fdd991a01:/app# pwd; printf '\n--- files ---\n'; ls -la; printf '\n--- pdb ids ---\n'; cat /app/pdb_ids.txt; printf '\n--- antibody fasta ---\n'; cat /app/antibody.fasta; printf '\n--- plasmid headers ---\n'; grep -nE '^LOCUS|^FEATURES|^ORIGIN|^ {5}(CDS|gene|misc_feature)' /app/plasmid.gb | head -80
+[?2004l/app
+
+--- files ---
+total 24
+drwxr-xr-x 1 root root 4096 Apr  3  2026 .
+drwxr-xr-x 1 root root 4096 Oct  5 00:47 ..
+-rw-r--r-- 1 root root  475 Apr  1  2026 antibody.fasta
+-rw-r--r-- 1 root root  100 Apr  1  2026 pdb_ids.txt
+-rw-r--r-- 1 root root 6053 Apr  1  2026 plasmid.gb
+
+--- pdb ids ---
+2IB5
+4KGE
+4Q7T
+1KFD
+5JZL
+6AA7
+3ADF
+5WJ2
+3M22
+2H5Q
+3MGF
+5Y01
+2VZX
+4CQH
+1YZW
+2CHA
+3KZY
+1AK4
+5P21
+1H6R
+
+--- antibody fasta ---
+>heavy chain
+QVQLQQSAAELARPGASVKMSCKASGYSFTTYTIHWVKQRPGQGLEWIGYINPSSGYAAYNQNFKDETTLTADPSSSTAYMELNSLTSEDSAVYYCAREKFYGYDYWGQGATLTVSSASTTPPSVYPLAPGSAAQTNSMVTLGCLVKGYFPEPVTVTWNSGSLSSGVHTFPAVLQSDLYTLSSSVTVPSSTWPSQTVTCNVAHPASSTKVDKKIVPRAAAHHHHHHHH
+>light chain
+DVLMTQIPLSLPVSLGDQASISCRSSQSIVHRNGNTYLEWYLLKPGQSPKLLIYKVSNRFSGVPDRFSGSGSGTDFTLKISRVEAEDLGVYYCFQGSHVPYTFGGGTKLEIRRADAAPTVSIFPPSSEQLTSGGASVVCFLNNFYPKDINVKWKIDGSERQNGVLNSWTDQDSKDSTYSMSSTLTLTKDEYERHNSYTCEATHKTSTSPIVKSFNRNQC
+
+--- plasmid headers ---
+1:LOCUS       DHFR_Control_Template   2727 bp    DNA     circular     30-DEC-2009
+14:FEATURES             Location/Qualifiers
+20:     gene            88..567
+22:     CDS             88..567
+34:     gene            complement(1744..2604)
+36:     CDS             complement(1744..2604)
+52:ORIGIN
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> from Bio import SeqIO
+[?2004l[?2004h> p=SeqIO.read('/app/plasmid.gb','genbank')
+[?2004l[?2004h> print('record length',len(p.seq))
+[?2004l[?2004h> for i,f in enumerate(p.features):
+[?2004l[?2004h>     print('\nFEATURE',i,f.type,f.location)
+[?2004l[?2004h>     for k,v in f.qualifiers.items(): print(' ',k, v)
+[?2004l[?2004h>     if f.type=='CDS':
+[?2004l[?2004h>         print('DNA',f.extract(p.seq))
+[?2004l[?2004h>         print('TRANSLATION',f.qualifiers.get('translation'))
+[?2004l[?2004h> PY
+[?2004lTraceback (most recent call last):
+  File [35m"<stdin>"[0m, line [35m1[0m, in [35m<module>[0m
+[1;35mModuleNotFoundError[0m: [35mNo module named 'Bio'[0m
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import requests
+[?2004l[?2004h> ids=open('/app/pdb_ids.txt').read().split()
+[?2004l[?2004h> for pid in ids:
+[?2004l[?2004h>     u=f'https://data.rcsb.org/rest/v1/core/entry/{pid}'
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         d=requests.get(u,timeout=20).json()
+[?2004l[?2004h>         print('\n',pid, d.get('struct',{}).get('title'))
+[?2004l[?2004h>         for e in d.get('rcsb_entry_container_identifiers',{}).get('polymer_entity_ids',[]):
+[?2004l[?2004h>             x=requests.get(f'https://data.rcsb.org/rest/v1/core/polymer_entity/{pid}/{e}',timeout=20).json()
+[?2004l[?2004h>             desc=x.get('rcsb_polymer_entity',{}).get('pdbx_description')
+[?2004l[?2004h>             seq=x.get('entity_poly',{}).get('pdbx_seq_one_letter_code_can','').replace('\n','')
+[?2004l[?2004h>             print(' entity',e,'desc=',desc,'len=',len(seq),'seq=',seq[:80])
+[?2004l[?2004h>     except Exception as ex: print(pid,'ERROR',ex)
+[?2004l[?2004h> PY
+[?2004lTraceback (most recent call last):
+  File [35m"<stdin>"[0m, line [35m1[0m, in [35m<module>[0m
+[1;35mModuleNotFoundError[0m: [35mNo module named 'requests'[0m
+[?2004hroot@800fdd991a01:/app# sed -n '1,120p' /app/plasmid.gb
+[?2004lLOCUS       DHFR_Control_Template   2727 bp    DNA     circular     30-DEC-2009
+DEFINITION  Control vector DHFR_Control_Template, complete sequence.
+ACCESSION
+VERSION
+KEYWORDS    .
+SOURCE      Control vector DHFR_Control_Template
+  ORGANISM  Control vector DHFR_Control_Template
+            other sequences; artificial sequences; vectors.
+REFERENCE   1  (bases 1 to 2727)
+  AUTHORS   Cantor,E.
+  TITLE     Direct Submission
+  JOURNAL   Submitted (30-DEC-2009) Research Department, New England Biolabs,
+            240 County Road, Ipswich, MA 01938, USA
+FEATURES             Location/Qualifiers
+     source          1..2727
+                     /organism="Control vector DHFR_Control_Template"
+                     /mol_type="other DNA"
+     promoter        26..43
+                     /note="T7 promoter (transcript start 43 clockwise)"
+     gene            88..567
+                     /gene="folA"
+     CDS             88..567
+                     /gene="folA"
+                     /codon_start=1
+                     /product="dihydrofolate reductase (DHFR)"
+                     /translation="MISLIAALAVDRVIGMENAMPWNLPADLAWFKRNTLNKPVIMGR
+                     HTWESIGRPLPGRKNIILSSQPGTDDRVTWVKSVDEAIAACGDVPEIMVIGGGRVYEQ
+                     FLPKAQKLYLTHIDAEVEGDTHFPDYEPDDWESVFSEFHDADAQNSHSYCFEILERR"
+     terminator      663..785
+                     /note="T7 Tphi transcription terminator"
+     rep_origin      complement(984..1572)
+                     /note="pUC19 origin of replication (counter-clockwise)
+                     (RNAII -35 to RNA/DNA switch point)"
+     gene            complement(1744..2604)
+                     /gene="bla"
+     CDS             complement(1744..2604)
+                     /gene="bla"
+                     /note="ampR (confers resistance to ampicillin)"
+                     /codon_start=1
+                     /product="beta-lactamase"
+                     /translation="MSIQHFRVALIPFFAAFCLPVFAHPETLVKVKDAEDQLGARVGY
+                     IELDLNSGKILESFRPEERFPMMSTFKVLLCGAVLSRIDAGQEQLGRRIHYSQNDLVE
+                     YSPVTEKHLTDGMTVRELCSAAITMSDNTAANLLLTTIGGPKELTAFLHNMGDHVTRL
+                     DRWEPELNEAIPNDERDTTMPVAMATTLRKLLTGELLTLASRQQLIDWMEADKVAGPL
+                     LRSALPAGWFIADKSGAGERGSRGIIAALGPDGKPSRIVVIYTTGSQATMDERNRQIA
+                     EIGASLIKHW"
+     sig_peptide     complement(2536..2604)
+                     /gene="bla"
+                     /note="Required for secretion to the periplasm; cleaved
+                     off to form the mature beta-lactamase protein."
+BASE COUNT      694 a    671 c    694 g    668 t
+ORIGIN
+        1 gctagtggtg ctagccccgc gaaattaata cgactcacta tagggtctag aaataatttt
+       61 gtttaacttt aagaaggaga tatacatatg atcagtctga ttgcggcgtt agcggtagat
+      121 cgcgttatcg gcatggaaaa cgccatgccg tggaacctgc ctgccgatct cgcctggttt
+      181 aaacgcaaca ccttaaataa acccgtgatt atgggccgcc atacctggga atcaatcggt
+      241 cgtccgttgc caggacgcaa aaatattatc ctcagcagtc aaccgggtac ggacgatcgc
+      301 gtaacgtggg tgaagtcggt ggatgaagcc atcgcggcgt gtggtgacgt accagaaatc
+      361 atggtgattg gcggcggtcg cgtttatgaa cagttcttgc caaaagcgca aaaactgtat
+      421 ctgacgcata tcgacgcaga agtggaaggc gacacccatt tcccggatta cgagccggat
+      481 gactgggaat cggtattcag cgaattccac gatgctgatg cgcagaactc tcacagctat
+      541 tgctttgaga ttctggagcg gcggtaatga ggatcccggg aattctcgag taaggttaac
+      601 ctgcaggagg cctttaatta aggtggtgcg gccgcgctag cggtcccggg ggatcgatcc
+      661 ggctgctaac aaagcccgaa aggaagctga gttggctgct gccaccgctg agcaataact
+      721 agcataaccc cttggggcct ctaaacgggt cttgaggggt tttttgctga aaggaggaac
+      781 tatatccgga agcttggcac tggccgaccg gggtcgagca ctgactcgct gcgctcggtc
+      841 gttcggctgc ggcgagcggt atcagctcac tcaaaggcgg taatacggtt atccacagaa
+      901 tcaggggata acgcaggaaa gaacatgtga gcaaaaggcc agcaaaaggc caggaaccgt
+      961 aaaaaggccg cgttgctggc gtttttccat aggctccgcc cccctgacga gcatcacaaa
+     1021 aatcgacgct caagtcagag gtggcgaaac ccgacaggac tataaagata ccaggcgttt
+     1081 ccccctggaa gctccctcgt gcgctctcct gttccgaccc tgccgcttac cggatacctg
+     1141 tccgcctttc tcccttcggg aagcgtggcg ctttctcata gctcacgctg taggtatctc
+     1201 agttcggtgt aggtcgttcg ctccaagctg ggctgtgtgc acgaaccccc cgttcagccc
+     1261 gaccgctgcg ccttatccgg taactatcgt cttgagtcca acccgctaag acacgactta
+     1321 tcgccactgg cagcagccac tggtaacagg attagcagag cgaggtatgt aggcggtgct
+     1381 acagagttct tgaagtggtg gcctaactac ggctacacta gaagaacagt atttggtatc
+     1441 tgcgctctgc tgaagccagt taccttcgga aaaagagttg gtagctcttg atccggcaaa
+     1501 caaaccaccg ctggtagcgg tggttttttt gtttgcaagc agcagattac gcgcagaaaa
+     1561 aaaggatctc aagaagatcc tttgatcttt tctacggggt ctgacgctca gtggaacgaa
+     1621 aactcacaga tccgggattt tggtcatgag attatcaaaa aggatcttca cctagatcct
+     1681 tttaaattaa aaatgaagtt ttaaatcaat ctaaagtata tatgagtaaa cttggtctga
+     1741 cagttaccaa tgcttaatca gtgaggcacc tatctcagcg atctgtctat ttcgttcatc
+     1801 catagttgcc tgactccccg tcgtgtagat aactacgata cgggagggct taccatctgg
+     1861 ccccagtgct gcaatgatac cgcgggaccc acgctcaccg gctccagatt tatcagcaat
+     1921 aaaccagcca gccggaaggg ccgagcgcag aagtggtcct gcaactttat ccgcctccat
+     1981 ccagtctatt aattgttgcc gggaagctag agtaagtagt tcgccagtta atagtttgcg
+     2041 caacgttgtt gccattgcta caggcatcgt ggtgtcacgc tcgtcgtttg gtatggcttc
+     2101 attcagctcc ggttcccaac gatcaaggcg agttacatga tcccccatgt tgtgcaaaaa
+     2161 agcggttagc tccttcggtc ctccgatcgt tgtcagaagt aagttggccg cagtgttatc
+     2221 actcatggtt atggcagcac tgcataattc tcttactgtc atgccatccg taagatgctt
+     2281 ttctgtgact ggtgagtact caaccaagtc attctgagaa tagtgtatgc ggcgaccgag
+     2341 ttgctcttgc ccggcgtcaa tacgggataa taccgcgcca catagcagaa ctttaaaagt
+     2401 gctcatcatt ggaaaacgtt cttcggggcg aaaactctca aggatcttac cgctgttgag
+     2461 atccagttcg atgtaaccca ctcgtgcacc caactgatct tcagcatctt ttactttcac
+     2521 cagcgtttct gggtgagcaa aaacaggaag gcaaaatgcc gcaaaaaagg gaataagggc
+     2581 gacacggaaa tgttgaatac tcatactctt cctttttcaa tattattgaa gcatttatca
+     2641 gggttattgt ctcatgagcg gatacatatt tgaatgtatt tagaaaaata aacaaatagg
+     2701 ggttccgcgc acatttcccc gaaaagt
+//
+[?2004hroot@800fdd991a01:/app# command -v curl; command -v jq || true; python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request
+[?2004l[?2004h> print('stdlib json/urllib available')
+[?2004l[?2004h> ids=open('/app/pdb_ids.txt').read().split()
+[?2004l[?2004h> for pid in ids:
+[?2004l[?2004h>  try:
+[?2004l[?2004h>   with urllib.request.urlopen('https://data.rcsb.org/rest/v1/core/entry/'+pid,timeout=20) as r: d=json.load(r)
+[?2004l[?2004h>   title=d.get('struct',{}).get('title','')
+[?2004l[?2004h>   ents=d.get('rcsb_entry_container_identifiers',{}).get('polymer_entity_ids',[])
+[?2004l[?2004h>   print('\n'+pid+' '+title)
+[?2004l[?2004h>   for e in ents:
+[?2004l[?2004h>    with urllib.request.urlopen(f'https://data.rcsb.org/rest/v1/core/polymer_entity/{pid}/{e}',timeout=20) as r: x=json.load(r)
+[?2004l[?2004h>    desc=x.get('rcsb_polymer_entity',{}).get('pdbx_description')
+[?2004l[?2004h>    seq=x.get('entity_poly',{}).get('pdbx_seq_one_letter_code_can','').replace('\n','')
+[?2004l[?2004h>    print(e,desc,'length',len(seq),'sequence',seq)
+[?2004l[?2004h>  except Exception as ex: print(pid,'ERROR',repr(ex))
+[?2004l[?2004h> PY
+[?2004lstdlib json/urllib available
+
+2IB5 Structural characterization of a blue chromoprotein and its yellow mutant from the sea anemone cnidopus japonicus
+1 Chromo protein length 233 sequence GSHMASKISDNVRIKLYMEGTVNNHHFMCEAEGEGKPYEGTQMENIKVTKGGPLPFSFDILTPNCXSVAITKYTSGIPDYFKQSFPEGFTWERTTIYEDGAYLTTQQETKLDGNCLVYNIKILGCNFPPNGPVMQKKTQGWEPCCEMRYTRDGVLCGQTLMALKCADGNHLTCHLRTTYRSKKAAKALQMPPFHFSDHRPEIVKVSENGTLFEQHESSVARYCQTCPSKLGHN
+
+4KGE Crystal structure of near-infrared fluorescent protein with an extended stokes shift, pH 4.5
+1 TagRFP675, red fluorescent protein length 245 sequence MGSHHHHHHGRSMSELIKENMHMKLYMEGTVNNHHFKCTSEGEGKPYEGTQTQRIKVVEGGPLPFAFDILATSFMYGSKTFINHTQGIPDFWKQSFPEGFTWERVTTYEDGGVLTATQDTSLQDGCLIYNVKIRGVNFPSNGPVMQKKTLGWEANTEMMYPADGGLEGRNYMALKLVGGGHLICSLKTTYRSKKPAKNLKMPGVYYVDRRLERIKEADKETYVEQHEVAVARYCDLPSKLGHKLN
+
+4Q7T Crystal structure of photoswitchable fluorescent protein PSmOrange
+1 PSmOrange length 245 sequence MGSHHHHHHGRSMVSKGEENNMAIIKEFMRFKVRMEGTVNGHEFEIEGEGEGRPYEGFQTAKLKVTKGGPLPFAWDILSPLXSKAYVKHPADIPDYFKLSFPEGFKWERVMNYEDGGVVTVTQDSSLQDGEFIYKVKMRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIRMRLKLKDGGHYTSEVKTTYKAKKSVQLPGAYIVGIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYK
+
+1KFD CRYSTAL STRUCTURES OF THE KLENOW FRAGMENT OF DNA POLYMERASE I COMPLEXED WITH DEOXYNUCLEOSIDE TRIPHOSPHATE AND PYROPHOSPHATE
+1 DNA POLYMERASE I KLENOW FRAGMENT length 605 sequence VISYDNYVTILDEETLKAWIAKLEKAPVFAFDTETDSLDNISANLVGLSFAIEPGVAAYIPVAHDYLDAPDQISRERALELLKPLLEDEKALKVGQNLKYDRGILANYGIELRGIAFDTMLESYILNSVAGRHDMDSLAERWLKHKTITFEEIAGKGKNQLTFNQIALEEAGRYAAEDADVTLQLHLKMWPDLQKHKGPLNVFENIEMPLVPVLSRIERNGVKIDPKVLHNHSEELTLRLAELEKKAHEIAGEEFNLSSTKQLQTILFEKQGIKPLKKTPGGAPSTSEEVLEELALDYPLPKVILEYRGLAKLKSTYTDKLPLMINPKTGRVHTSYHQAVTATGRLSSTDPNLQNIPVRNEEGRRIRQAFIAPEDYVIVSADYSQIELRIMAHLSRDKGLLTAFAEGKDIHRATAAEVFGLPLETVTSEQRRSAKAINFGLIYGMSAFGLARQLNIPRKEAQKYMDLYFERYPGVLEYMERTRAQAKEQGYVETLDGRRLYLPDIKSSNGARRAAAERAAINAPMQGTAADIIKRAMIAVDAWLQAEQPRVRMIMQVHDELVFEVHKDDVDAVAKQIHQLMENCTRLDVPLLVEVGSGENWDQAH
+
+5JZL The Structure of Monomeric Ultra Stable Green Fluorescent Protein
+1 Green fluorescent protein length 247 sequence MRGSHHHHHHGSSKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTLXVLCFSRYPDHMKRHDFFKSAMPEGYVQERTISFKDDGTYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKAYFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSVLSKDPNEKRDHMVLLEDVTAAGITHGMDELYK
+
+6AA7 Fluorescent protein from Acropora digitifera
+1 Fluorescent protein length 233 sequence GSHMMALSKHGLTKDMTMKYRMEGCVDGHKFVITGHGNGSPFEGKQTINLCVVEGGPLPFSEDILSAVFXNRVFTDYPQGMVDFFKNSCPAGYTWQRSLLFEDGAVCTASADITVSVEENCFYHESKFHGVNFPADGPVMKKMTINWEPCCEKIIPVPRQGILKGDVAMYLLLKDGGRYRCQFDTVYKAKTDSKKMPEWHFIQHKLTREDRSDAKNQKWQLAEHSVASRSALA
+
+3ADF Crystal structure of a monomeric green fluorescent protein, Azami-Green (mAG)
+1 Monomeric Azami Green length 226 sequence GAHMSVIKPEMKIKLCMRGTVNGHNFVIEGEGKGNPYEGTQILDLNVTEGAPLPFAYDILTTVFXNRAFTKYPADIQDYFKQTFPEGYHWERSMTYEDQGICTATSNISMRGDCFFYDIRFDGTNFPPNGPVMQKKTLKWEPSTEKMYVEDGVLKGDVNMRLLLEGGGHYRCDFKTTYKAKKEVRLPDAHKIDHRIEILKHDKDYNKVKLYENAVARYSMLPSQAK
+
+5WJ2 Crystal structure of the green fluorescent protein Clover
+1 Green fluorescent protein length 258 sequence MGSSHHHHHHSSGENLYFQGHMVSKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTFXVACFSRYPDHMKQHDFFKSAMPEGYVQERTISFKDDGTYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSHQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK
+
+3M22 Crystal structure of TagRFP fluorescent protein
+1 TagRFP length 235 sequence MVSKGEELIKENMHMKLYMEGTVNNHHFKCTSEGEGKPYEGTQTMRIKVVEGGPLPFAFDILATSFXSRTFINHTQGIPDFFKQSFPEGFTWERVTTYEDGGVLTATQDTSLQDGCLIYNVKIRGVNFPSNGPVMQKKTLGWEANTEMLYPADGGLEGRSDMALKLVGGGHLICNFKTTYRSKKPAKNLKMPGVYYVDHRLERIKEADKETYVEQHEVAVARYCDLPSKLGHKLN
+
+2H5Q Crystal structure of mCherry
+1 mCherry length 234 sequence MVSKGEEDNMAIIKEFMRFKVHMEGSVNGHEFEIEGEGEGRPYEGTQTAKLKVTKGGPLPFAWDILSPQFXSKAYVKHPADIPDYLKLSFPEGFKWERVMNFEDGGVVTVTQDSSLQDGEFIYKVKLRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIKQRLKLKDGGHYDAEVKTTYKAKKPVQLPGAYNVNIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYK
+
+3MGF Crystal Structure of Monomeric Kusabira-Orange (MKO), Orange-Emitting GFP-like Protein, at pH 7.5
+1 Fluorescent protein length 218 sequence GAHMVSVIKPEMKMRYYMDGSVNGHEFTIEGEGTGRPYEGHQEMTLRVTMAKGGPMPFAFDLVSHVXHRPFTKYPEEIPDYFKQAFPEGLSWERSLEFEDGGSASVSAHISLRGNTFYHKSKFTGVNFPADGPIMQNQSVDWEPSTEKITASDGVLKGDVTMYLKLEGGGNHKCQFKTTYKAAKKILKMPGSHYISHRLVRKTEGNITELVEDAVAHS
+
+5Y01 Acid-tolerant monomeric GFP, Gamillus, non-fluorescence (OFF) state
+1 Green fluorescent protein length 271 sequence MRGSHHHHHHGMASMTGGQQMGRDLYDDDDKDPTMVSKGEEASGRALFQYPMTSKIELNGEINGKKFKVAGEGFTPSSGRFNMHAYCTTGDLPMSWVVIASPLXFHMFAHYPEDITHFFQECFPGSYTLDRTLRMEGDGTLTTHHEYSLEDGCVTSKTTLNASGFDPKGATMTKSFVKQLPNEVKITPHGPNGIRLTSTVLYLKEDGTIQIGTQDCIVTPVGGRKVTQPKAHFLHTQIIQKKDPNDTRDHIVQTELAVAGNLWHGMDELYK
+
+2VZX Structural and spectroscopic characterization of photoconverting fluorescent protein Dendra2
+1 Green fluorescent protein length 231 sequence MNLIKEDMRVKVHMEGNVNGHAFVIEGEGKGKPYEGTQTANLTVKEGAPLPFSYDILTTAVHYGNRVFTKYPEDIPDYFKQSFPEGYSWERTMTFEDKGICTIRSDISLEGDCFFQNVRFKGTNFPPNGPVMQKKTLKWEPSTEKLHVRDGLLVGNINMALLLEGGGHYLCDFKTTYKAKKVVQLPDAHFVDHRIEILGNDSDYNKVKLYEHAVARYSPLPSQVWHHHHHH
+
+4CQH Structure of Infrared Fluorescent Protein IFP2.0
+1 BACTERIOPHYTOCHROME length 329 sequence MARDPQPFFPPLYLGGPEITTENCEREPIHIPGSIQPHGALLTADGHSGEVLQVSLNAATFLGQEPTVLRGQTLAALLPDQWPALQTALPPGCQDALQYRATLDWPAAGHLSLTVHRVAELLILEFEPTEAWDSIGPHALRNAMFALESAPNLRALAEVATQTVRELSGFDRVMLYKFAPDATGEVIAEARREGMQAYLGHRFPASTTPAQARALYTRHLLRLTADTRAAAVPLDPVLNPQTNAPTPLGGAVLRATSPMHMQYLRNMGVGSSLSVSVVVGGQLWGLIVCHHQTPYVLPPDLRTTLEYLGRLLSLQVQRKEAEFHHHHHH
+
+1YZW The 2.1A Crystal Structure of the Far-red Fluorescent Protein HcRed: Inherent Conformational Flexibility of the Chromophore
+1 GFP-like non-fluorescent chromoprotein length 225 sequence MAGLLKESMRIKMYMEGTVNGHYFKCEGEGDGNPFAGTQSMRIHVTEGAPLPFAFDILAPCCXSRTFVHHTAEIPDFFKQSFPEGFTWERTTTYEDGGILTAHQDTSLEGNCLIYKVKVHGTNFPADGPVMKNKSGGWEPSTEVVYPENGVLCGRNVMALKVGDRHLICHHYTSYRSKKAVRALTMPGFHFTDIRLQMLRKKKDEYFELYEASVARYSDLPEKAN
+
+2CHA THE STRUCTURE OF CRYSTALLINE ALPHA-CHYMOTRYPSIN, $V.THE ATOMIC STRUCTURE OF TOSYL-ALPHA-CHYMOTRYPSIN AT 2 ANGSTROMS RESOLUTION
+1 ALPHA-CHYMOTRYPSIN A length 13 sequence CGVPAIQPVLSGL
+2 ALPHA-CHYMOTRYPSIN A length 131 sequence IVNGEEAVPGSWPWQVSLQDKTGFHFCGGSLINENWVVTAAHCGVTTSDVVVAGEFDQGSSSEKIQKLKIAKVFKNSKYNSLTINNDITLLKLSTAASFSQTVSAVCLPSASDDFAAGTTCVTTGWGLTRY
+3 ALPHA-CHYMOTRYPSIN A length 97 sequence ANTPDRLQQASLPLLSNTNCKKYWGTKIKDAMICAGASGVSSCMGDSGGPLVCKKNGAWTLVGIVSWGSSTCSTSTPGVYARVTALVNWVQQTLAAN
+
+3KZY Crystal structure of SNAP-tag
+1 Methylated-DNA--protein-cysteine methyltransferase length 182 sequence GPGSDKDCEMKRTTLDSPLGKLELSGCEQGLHEIIFLGKGTSAADAVEVPAPAAVLGGPEPLMQATAWLNAYFHQPEAIEEFPVPALHHPVFQQESFTRQVLWKLLKVVKFGEVISYSHLAALAGNPAATAAVKTALSGNPVPILIPCHRVVQGDLDVGGYEGGLAVKEWLLAHEGHRLGKR
+
+1AK4 HUMAN CYCLOPHILIN A BOUND TO THE AMINO-TERMINAL DOMAIN OF HIV-1 CAPSID
+1 CYCLOPHILIN A length 165 sequence MVNPTVFFDIAVDGEPLGRVSFELFADKVPKTAENFRALSTGEKGFGYKGSCFHRIIPGFMCQGGDFTRHNGTGGKSIYGEKFEDENFILKHTGPGILSMANAGPNTNGSQFFICTAKTEWLDGKHVVFGKVKEGMNIVEAMERFGSRNGKTSKKITIADCGQLE
+2 HIV-1 CAPSID length 145 sequence PIVQNLQGQMVHQAISPRTLNAWVKVVEEKAFSPEVIPMFSALSEGATPQDLNTMLNTVGGHQAAMQMLKETINEEAAEWDRLHPVHAGPIAPGQMREPRGSDIAGTTSTLQEQIGWMTHNPPIPVGEIYKRWIILGLNKIVRMY
+
+5P21 REFINED CRYSTAL STRUCTURE OF THE TRIPHOSPHATE CONFORMATION OF H-RAS P21 AT 1.35 ANGSTROMS RESOLUTION: IMPLICATIONS FOR THE MECHANISM OF GTP HYDROLYSIS
+1 C-H-RAS P21 PROTEIN length 166 sequence MTEYKLVVVGAGGVGKSALTIQLIQNHFVDEYDPTIEDSYRKQVVIDGETCLLDILDTAGQEEYSAMRDQYMRTGEGFLCVFAINNTKSFEDIHQYREQIKRVKDSDDVPMVLVGNKCDLAARTVESRQAQDLARSYGIPYIETSAKTRQGVEDAFYTLVREIRQH
+
+1H6R The oxidized state of a redox sensitive variant of green fluorescent protein
+1 GREEN FLUORESCENT PROTEIN length 238 sequence MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFIVTTGKLPVPWPTLVTTFAYGLQCFARYPDHMKRHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHCVYIVADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLCYQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK
+python3 - <<'PY'
+import json,urllib.request
+ids=open('/app/pdb_ids.txt').read().split()
+for pid in ids:
+ try:
+  with urllib.request.urlopen('https://data.rcsb.org/rest/v1/core/entry/'+pid,timeout=20) as r:d=json.load(r)
+  print('\n###',pid,d.get('struct',{}).get('title',''))
+  for e in d.get('rcsb_entry_container_identifiers',{}).get('polymer_entity_ids',[]):
+   with urllib.request.urlopen(f'https://data.rcsb.org/rest/v1/core/polymer_entity/{pid}/{e}',timeout=20) as r:x=json.load(r)
+   ep=x.get('entity_poly',{})
+   seq=ep.get('pdbx_seq_one_letter_code_can','').replace('\n','').replace(' ','')
+   print('ENTITY',e,'DESC',x.get('rcsb_polymer_entity',{}).get('pdbx_description'),'LEN',len(seq),'SEQ',seq)
+  for e in d.get('rcsb_entry_container_identifiers',{}).get('non_polymer_entity_ids',[]):
+   with urllib.request.urlopen(f'https://data.rcsb.org/rest/v1/core/nonpolymer_entity/{pid}/{e}',timeout=20) as r:x=json.load(r)
+   print('NONPOLY',e,x.get('pdbx_entity_nonpoly',{}).get('name'),x.get('pdbx_entity_nonpoly',{}).get('comp_id'))
+ except Exception as ex: print(pid,'ERROR',ex)
+PY
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request
+[?2004l[?2004h> ids=open('/app/pdb_ids.txt').read().split()
+[?2004l[?2004h> for pid in ids:
+[?2004l[?2004h>  try:
+[?2004l[?2004h>   with urllib.request.urlopen('https://data.rcsb.org/rest/v1/core/entry/'+pid,timeout=20) as r:d=json.load(r)
+[?2004l[?2004h>   print('\n###',pid,d.get('struct',{}).get('title',''))
+[?2004l[?2004h>   for e in d.get('rcsb_entry_container_identifiers',{}).get('polymer_entity_ids',[]):
+[?2004l[?2004h>    with urllib.request.urlopen(f'https://data.rcsb.org/rest/v1/core/polymer_entity/{pid}/{e}',timeout=20) as r:x=json.load(r)
+[?2004l[?2004h>    ep=x.get('entity_poly',{})
+[?2004l[?2004h>    seq=ep.get('pdbx_seq_one_letter_code_can','').replace('\n','').replace(' ','')
+[?2004l[?2004h>    print('ENTITY',e,'DESC',x.get('rcsb_polymer_entity',{}).get('pdbx_description'),'LEN',len(seq),'SEQ',seq)
+[?2004l[?2004h>   for e in d.get('rcsb_entry_container_identifiers',{}).get('non_polymer_entity_ids',[]):
+[?2004l[?2004h>    with urllib.request.urlopen(f'https://data.rcsb.org/rest/v1/core/nonpolymer_entity/{pid}/{e}',timeout=20) as r:x=json.load(r)
+[?2004l[?2004h>    print('NONPOLY',e,x.get('pdbx_entity_nonpoly',{}).get('name'),x.get('pdbx_entity_nonpoly',{}).get('comp_id'))
+[?2004l[?2004h>  except Exception as ex: print(pid,'ERROR',ex)
+[?2004l[?2004h> PY
+[?2004l
+### 2IB5 Structural characterization of a blue chromoprotein and its yellow mutant from the sea anemone cnidopus japonicus
+ENTITY 1 DESC Chromo protein LEN 233 SEQ GSHMASKISDNVRIKLYMEGTVNNHHFMCEAEGEGKPYEGTQMENIKVTKGGPLPFSFDILTPNCXSVAITKYTSGIPDYFKQSFPEGFTWERTTIYEDGAYLTTQQETKLDGNCLVYNIKILGCNFPPNGPVMQKKTQGWEPCCEMRYTRDGVLCGQTLMALKCADGNHLTCHLRTTYRSKKAAKALQMPPFHFSDHRPEIVKVSENGTLFEQHESSVARYCQTCPSKLGHN
+NONPOLY 2 PHOSPHATE ION PO4
+
+### 4KGE Crystal structure of near-infrared fluorescent protein with an extended stokes shift, pH 4.5
+ENTITY 1 DESC TagRFP675, red fluorescent protein LEN 245 SEQ MGSHHHHHHGRSMSELIKENMHMKLYMEGTVNNHHFKCTSEGEGKPYEGTQTQRIKVVEGGPLPFAFDILATSFMYGSKTFINHTQGIPDFWKQSFPEGFTWERVTTYEDGGVLTATQDTSLQDGCLIYNVKIRGVNFPSNGPVMQKKTLGWEANTEMMYPADGGLEGRNYMALKLVGGGHLICSLKTTYRSKKPAKNLKMPGVYYVDRRLERIKEADKETYVEQHEVAVARYCDLPSKLGHKLN
+NONPOLY 2 CHLORIDE ION CL
+
+### 4Q7T Crystal structure of photoswitchable fluorescent protein PSmOrange
+ENTITY 1 DESC PSmOrange LEN 245 SEQ MGSHHHHHHGRSMVSKGEENNMAIIKEFMRFKVRMEGTVNGHEFEIEGEGEGRPYEGFQTAKLKVTKGGPLPFAWDILSPLXSKAYVKHPADIPDYFKLSFPEGFKWERVMNYEDGGVVTVTQDSSLQDGEFIYKVKMRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIRMRLKLKDGGHYTSEVKTTYKAKKSVQLPGAYIVGIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYK
+
+### 1KFD CRYSTAL STRUCTURES OF THE KLENOW FRAGMENT OF DNA POLYMERASE I COMPLEXED WITH DEOXYNUCLEOSIDE TRIPHOSPHATE AND PYROPHOSPHATE
+ENTITY 1 DESC DNA POLYMERASE I KLENOW FRAGMENT LEN 605 SEQ VISYDNYVTILDEETLKAWIAKLEKAPVFAFDTETDSLDNISANLVGLSFAIEPGVAAYIPVAHDYLDAPDQISRERALELLKPLLEDEKALKVGQNLKYDRGILANYGIELRGIAFDTMLESYILNSVAGRHDMDSLAERWLKHKTITFEEIAGKGKNQLTFNQIALEEAGRYAAEDADVTLQLHLKMWPDLQKHKGPLNVFENIEMPLVPVLSRIERNGVKIDPKVLHNHSEELTLRLAELEKKAHEIAGEEFNLSSTKQLQTILFEKQGIKPLKKTPGGAPSTSEEVLEELALDYPLPKVILEYRGLAKLKSTYTDKLPLMINPKTGRVHTSYHQAVTATGRLSSTDPNLQNIPVRNEEGRRIRQAFIAPEDYVIVSADYSQIELRIMAHLSRDKGLLTAFAEGKDIHRATAAEVFGLPLETVTSEQRRSAKAINFGLIYGMSAFGLARQLNIPRKEAQKYMDLYFERYPGVLEYMERTRAQAKEQGYVETLDGRRLYLPDIKSSNGARRAAAERAAINAPMQGTAADIIKRAMIAVDAWLQAEQPRVRMIMQVHDELVFEVHKDDVDAVAKQIHQLMENCTRLDVPLLVEVGSGENWDQAH
+NONPOLY 2 CYTIDINE-5'-TRIPHOSPHATE CTP
+
+### 5JZL The Structure of Monomeric Ultra Stable Green Fluorescent Protein
+ENTITY 1 DESC Green fluorescent protein LEN 247 SEQ MRGSHHHHHHGSSKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTLXVLCFSRYPDHMKRHDFFKSAMPEGYVQERTISFKDDGTYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKAYFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSVLSKDPNEKRDHMVLLEDVTAAGITHGMDELYK
+NONPOLY 2 CHLORIDE ION CL
+NONPOLY 3 SODIUM ION NA
+
+### 6AA7 Fluorescent protein from Acropora digitifera
+ENTITY 1 DESC Fluorescent protein LEN 233 SEQ GSHMMALSKHGLTKDMTMKYRMEGCVDGHKFVITGHGNGSPFEGKQTINLCVVEGGPLPFSEDILSAVFXNRVFTDYPQGMVDFFKNSCPAGYTWQRSLLFEDGAVCTASADITVSVEENCFYHESKFHGVNFPADGPVMKKMTINWEPCCEKIIPVPRQGILKGDVAMYLLLKDGGRYRCQFDTVYKAKTDSKKMPEWHFIQHKLTREDRSDAKNQKWQLAEHSVASRSALA
+
+### 3ADF Crystal structure of a monomeric green fluorescent protein, Azami-Green (mAG)
+ENTITY 1 DESC Monomeric Azami Green LEN 226 SEQ GAHMSVIKPEMKIKLCMRGTVNGHNFVIEGEGKGNPYEGTQILDLNVTEGAPLPFAYDILTTVFXNRAFTKYPADIQDYFKQTFPEGYHWERSMTYEDQGICTATSNISMRGDCFFYDIRFDGTNFPPNGPVMQKKTLKWEPSTEKMYVEDGVLKGDVNMRLLLEGGGHYRCDFKTTYKAKKEVRLPDAHKIDHRIEILKHDKDYNKVKLYENAVARYSMLPSQAK
+
+### 5WJ2 Crystal structure of the green fluorescent protein Clover
+ENTITY 1 DESC Green fluorescent protein LEN 258 SEQ MGSSHHHHHHSSGENLYFQGHMVSKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTFXVACFSRYPDHMKQHDFFKSAMPEGYVQERTISFKDDGTYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSHQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK
+
+### 3M22 Crystal structure of TagRFP fluorescent protein
+ENTITY 1 DESC TagRFP LEN 235 SEQ MVSKGEELIKENMHMKLYMEGTVNNHHFKCTSEGEGKPYEGTQTMRIKVVEGGPLPFAFDILATSFXSRTFINHTQGIPDFFKQSFPEGFTWERVTTYEDGGVLTATQDTSLQDGCLIYNVKIRGVNFPSNGPVMQKKTLGWEANTEMLYPADGGLEGRSDMALKLVGGGHLICNFKTTYRSKKPAKNLKMPGVYYVDHRLERIKEADKETYVEQHEVAVARYCDLPSKLGHKLN
+
+### 2H5Q Crystal structure of mCherry
+ENTITY 1 DESC mCherry LEN 234 SEQ MVSKGEEDNMAIIKEFMRFKVHMEGSVNGHEFEIEGEGEGRPYEGTQTAKLKVTKGGPLPFAWDILSPQFXSKAYVKHPADIPDYLKLSFPEGFKWERVMNFEDGGVVTVTQDSSLQDGEFIYKVKLRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIKQRLKLKDGGHYDAEVKTTYKAKKPVQLPGAYNVNIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYK
+
+### 3MGF Crystal Structure of Monomeric Kusabira-Orange (MKO), Orange-Emitting GFP-like Protein, at pH 7.5
+ENTITY 1 DESC Fluorescent protein LEN 218 SEQ GAHMVSVIKPEMKMRYYMDGSVNGHEFTIEGEGTGRPYEGHQEMTLRVTMAKGGPMPFAFDLVSHVXHRPFTKYPEEIPDYFKQAFPEGLSWERSLEFEDGGSASVSAHISLRGNTFYHKSKFTGVNFPADGPIMQNQSVDWEPSTEKITASDGVLKGDVTMYLKLEGGGNHKCQFKTTYKAAKKILKMPGSHYISHRLVRKTEGNITELVEDAVAHS
+
+### 5Y01 Acid-tolerant monomeric GFP, Gamillus, non-fluorescence (OFF) state
+ENTITY 1 DESC Green fluorescent protein LEN 271 SEQ MRGSHHHHHHGMASMTGGQQMGRDLYDDDDKDPTMVSKGEEASGRALFQYPMTSKIELNGEINGKKFKVAGEGFTPSSGRFNMHAYCTTGDLPMSWVVIASPLXFHMFAHYPEDITHFFQECFPGSYTLDRTLRMEGDGTLTTHHEYSLEDGCVTSKTTLNASGFDPKGATMTKSFVKQLPNEVKITPHGPNGIRLTSTVLYLKEDGTIQIGTQDCIVTPVGGRKVTQPKAHFLHTQIIQKKDPNDTRDHIVQTELAVAGNLWHGMDELYK
+NONPOLY 2 PHOSPHATE ION PO4
+
+### 2VZX Structural and spectroscopic characterization of photoconverting fluorescent protein Dendra2
+ENTITY 1 DESC Green fluorescent protein LEN 231 SEQ MNLIKEDMRVKVHMEGNVNGHAFVIEGEGKGKPYEGTQTANLTVKEGAPLPFSYDILTTAVHYGNRVFTKYPEDIPDYFKQSFPEGYSWERTMTFEDKGICTIRSDISLEGDCFFQNVRFKGTNFPPNGPVMQKKTLKWEPSTEKLHVRDGLLVGNINMALLLEGGGHYLCDFKTTYKAKKVVQLPDAHFVDHRIEILGNDSDYNKVKLYEHAVARYSPLPSQVWHHHHHH
+NONPOLY 2 TETRAETHYLENE GLYCOL PG4
+NONPOLY 3 GLYCEROL GOL
+
+### 4CQH Structure of Infrared Fluorescent Protein IFP2.0
+python3 - <<'PY'
+import json,urllib.request
+urls=['https://www.fpbase.org/api/proteins/','https://www.fpbase.org/api/proteins/?limit=5000','https://www.fpbase.org/api/']
+for u in urls:
+ try:
+  r=urllib.request.urlopen(u,timeout=20); data=r.read().decode(); print('\nURL',u,'STATUS',r.status,'LEN',len(data)); print(data[:1000])
+ except Exception as e: print('ERR',u,e)
+PY
+ENTITY 1 DESC BACTERIOPHYTOCHROME LEN 329 SEQ MARDPQPFFPPLYLGGPEITTENCEREPIHIPGSIQPHGALLTADGHSGEVLQVSLNAATFLGQEPTVLRGQTLAALLPDQWPALQTALPPGCQDALQYRATLDWPAAGHLSLTVHRVAELLILEFEPTEAWDSIGPHALRNAMFALESAPNLRALAEVATQTVRELSGFDRVMLYKFAPDATGEVIAEARREGMQAYLGHRFPASTTPAQARALYTRHLLRLTADTRAAAVPLDPVLNPQTNAPTPLGGAVLRATSPMHMQYLRNMGVGSSLSVSVVVGGQLWGLIVCHHQTPYVLPPDLRTTLEYLGRLLSLQVQRKEAEFHHHHHH
+NONPOLY 2 3-[2-[(Z)-[3-(2-carboxyethyl)-5-[(Z)-(4-ethenyl-3-methyl-5-oxidanylidene-pyrrol-2-ylidene)methyl]-4-methyl-pyrrol-1-ium -2-ylidene]methyl]-5-[(Z)-[(3E)-3-ethylidene-4-methyl-5-oxidanylidene-pyrrolidin-2-ylidene]methyl]-4-methyl-1H-pyrrol-3- yl]propanoic acid LBV
+NONPOLY 3 SODIUM ION NA
+
+### 1YZW The 2.1A Crystal Structure of the Far-red Fluorescent Protein HcRed: Inherent Conformational Flexibility of the Chromophore
+ENTITY 1 DESC GFP-like non-fluorescent chromoprotein LEN 225 SEQ MAGLLKESMRIKMYMEGTVNGHYFKCEGEGDGNPFAGTQSMRIHVTEGAPLPFAFDILAPCCXSRTFVHHTAEIPDFFKQSFPEGFTWERTTTYEDGGILTAHQDTSLEGNCLIYKVKVHGTNFPADGPVMKNKSGGWEPSTEVVYPENGVLCGRNVMALKVGDRHLICHHYTSYRSKKAVRALTMPGFHFTDIRLQMLRKKKDEYFELYEASVARYSDLPEKAN
+NONPOLY 2 DI(HYDROXYETHYL)ETHER PEG
+
+### 2CHA THE STRUCTURE OF CRYSTALLINE ALPHA-CHYMOTRYPSIN, $V.THE ATOMIC STRUCTURE OF TOSYL-ALPHA-CHYMOTRYPSIN AT 2 ANGSTROMS RESOLUTION
+ENTITY 1 DESC ALPHA-CHYMOTRYPSIN A LEN 13 SEQ CGVPAIQPVLSGL
+ENTITY 2 DESC ALPHA-CHYMOTRYPSIN A LEN 131 SEQ IVNGEEAVPGSWPWQVSLQDKTGFHFCGGSLINENWVVTAAHCGVTTSDVVVAGEFDQGSSSEKIQKLKIAKVFKNSKYNSLTINNDITLLKLSTAASFSQTVSAVCLPSASDDFAAGTTCVTTGWGLTRY
+ENTITY 3 DESC ALPHA-CHYMOTRYPSIN A LEN 97 SEQ ANTPDRLQQASLPLLSNTNCKKYWGTKIKDAMICAGASGVSSCMGDSGGPLVCKKNGAWTLVGIVSWGSSTCSTSTPGVYARVTALVNWVQQTLAAN
+NONPOLY 4 PARA-TOLUENE SULFONATE TSU
+
+### 3KZY Crystal structure of SNAP-tag
+ENTITY 1 DESC Methylated-DNA--protein-cysteine methyltransferase LEN 182 SEQ GPGSDKDCEMKRTTLDSPLGKLELSGCEQGLHEIIFLGKGTSAADAVEVPAPAAVLGGPEPLMQATAWLNAYFHQPEAIEEFPVPALHHPVFQQESFTRQVLWKLLKVVKFGEVISYSHLAALAGNPAATAAVKTALSGNPVPILIPCHRVVQGDLDVGGYEGGLAVKEWLLAHEGHRLGKR
+NONPOLY 2 ZINC ION ZN
+
+### 1AK4 HUMAN CYCLOPHILIN A BOUND TO THE AMINO-TERMINAL DOMAIN OF HIV-1 CAPSID
+ENTITY 1 DESC CYCLOPHILIN A LEN 165 SEQ MVNPTVFFDIAVDGEPLGRVSFELFADKVPKTAENFRALSTGEKGFGYKGSCFHRIIPGFMCQGGDFTRHNGTGGKSIYGEKFEDENFILKHTGPGILSMANAGPNTNGSQFFICTAKTEWLDGKHVVFGKVKEGMNIVEAMERFGSRNGKTSKKITIADCGQLE
+ENTITY 2 DESC HIV-1 CAPSID LEN 145 SEQ PIVQNLQGQMVHQAISPRTLNAWVKVVEEKAFSPEVIPMFSALSEGATPQDLNTMLNTVGGHQAAMQMLKETINEEAAEWDRLHPVHAGPIAPGQMREPRGSDIAGTTSTLQEQIGWMTHNPPIPVGEIYKRWIILGLNKIVRMY
+
+### 5P21 REFINED CRYSTAL STRUCTURE OF THE TRIPHOSPHATE CONFORMATION OF H-RAS P21 AT 1.35 ANGSTROMS RESOLUTION: IMPLICATIONS FOR THE MECHANISM OF GTP HYDROLYSIS
+ENTITY 1 DESC C-H-RAS P21 PROTEIN LEN 166 SEQ MTEYKLVVVGAGGVGKSALTIQLIQNHFVDEYDPTIEDSYRKQVVIDGETCLLDILDTAGQEEYSAMRDQYMRTGEGFLCVFAINNTKSFEDIHQYREQIKRVKDSDDVPMVLVGNKCDLAARTVESRQAQDLARSYGIPYIETSAKTRQGVEDAFYTLVREIRQH
+NONPOLY 2 MAGNESIUM ION MG
+NONPOLY 3 PHOSPHOAMINOPHOSPHONIC ACID-GUANYLATE ESTER GNP
+
+### 1H6R The oxidized state of a redox sensitive variant of green fluorescent protein
+ENTITY 1 DESC GREEN FLUORESCENT PROTEIN LEN 238 SEQ MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFIVTTGKLPVPWPTLVTTFAYGLQCFARYPDHMKRHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHCVYIVADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLCYQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK
+NONPOLY 2 CHLORIDE ION CL
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request
+[?2004l[?2004h> urls=['https://www.fpbase.org/api/proteins/','https://www.fpbase.org/api/proteins/?limit=5000','https://www.fpbase.org/api/']
+[?2004l[?2004h> for u in urls:
+[?2004l[?2004h>  try:
+[?2004l[?2004h>   r=urllib.request.urlopen(u,timeout=20); data=r.read().decode(); print('\nURL',u,'STATUS',r.status,'LEN',len(data)); print(data[:1000])
+[?2004l[?2004h>  except Exception as e: print('ERR',u,e)
+[?2004l[?2004h> PY
+[?2004lERR https://www.fpbase.org/api/proteins/ HTTP Error 403: Forbidden
+ERR https://www.fpbase.org/api/proteins/?limit=5000 HTTP Error 403: Forbidden
+ERR https://www.fpbase.org/api/ HTTP Error 403: Forbidden
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request,urllib.parse
+[?2004l[?2004h> sm='Nc3nc(OCc1ccccc1)c2nc[nH]c2n3'
+[?2004l[?2004h> for url in ['https://search.rcsb.org/rcsbsearch/v2/query?json='+urllib.parse.quote(json.dumps({'query':{'type':'terminal','service':'chemical','parameters':{'attribute':'rcsb_chem_comp_descriptor SMILES','operator':'exact_match','value':sm}},'return_type':'entry','request_options':{'paginate':{'start':0,'rows':100}}}))]:
+[?2004l[?2004h>  try:
+[?2004l[?2004h>   print(urllib.request.urlopen(url,timeout=30).read().decode())
+[?2004l[?2004h>  except Exception as e: print('ERR',e)
+[?2004l[?2004h> PY
+[?2004lERR HTTP Error 400: Bad Request
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l
+   time.sleep(5)
+   u='https://blast.ncbi.nlm.nih.gov/Blast.cgi?'+urllib.parse.urlencode({'CMD':'Get','RID':rid,'FORMAT_TYPE':'XML'})
+   out=urllib.request.urlopen(u,timeout=60).read().decode()
+   if 'Status=WAITING' not in out and 'Status=UNKNOWN' not in out and len(out)>1000:
+    open('/tmp/'+name+'.xml','w').write(out); print('saved',len(out)); break
+   print('poll',len(out),out[:40])
+PY
+[?2004h> import urllib.parse,urllib.request,time,re
+[?2004l[?2004h> seqs={
+[?2004l[?2004h> 'heavy':'QVQLQQSAAELARPGASVKMSCKASGYSFTTYTIHWVKQRPGQGLEWIGYINPSSGYAAYNQNFKDETTLTADPSSSTAYMELNSLTSEDSAVYYCAREKFYGYDYWGQGATLTVSSASTTPPSVYPLAPGSAAQTNSMVTLGCLVKGYFPEPVTVTWNSGSLSSGVHTFPAVLQSDLYTLSSSVTVPSSTWPSQTVTCNVAHPASSTKVDKKIVPRAAA',
+[?2004l[?2004h> 'light':'DVLMTQIPLSLPVSLGDQASISCRSSQSIVHRNGNTYLEWYLLKPGQSPKLLIYKVSNRFSGVPDRFSGSGSGTDFTLKISRVEAEDLGVYYCFQGSHVPYTFGGGTKLEIRRADAAPTVSIFPPSSEQLTSGGASVVCFLNNFYPKDINVKWKIDGSERQNGVLNSWTDQDSKDSTYSMSSTLTLTKDEYERHNSYTCEATHKTSTSPIVKSFNRNQC'
+[?2004l[?2004h> }
+[?2004l[?2004h> for name,seq in seqs.items():
+[?2004l[?2004h>  data=urllib.parse.urlencode({'CMD':'Put','PROGRAM':'blastp','DATABASE':'nr','QUERY':seq,'FORMAT_TYPE':'XML','HITLIST_SIZE':'20'}).encode()
+[?2004l[?2004h>  req=urllib.request.Request('https://blast.ncbi.nlm.nih.gov/Blast.cgi',data=data,headers={'User-Agent':'Mozilla/5.0'})
+[?2004l[?2004h>  txt=urllib.request.urlopen(req,timeout=60).read().decode()
+[?2004l[?2004h>  print(name,txt[:500].replace('\n',' '))
+[?2004l[?2004h>  m=re.search(r'RID = ([A-Z0-9-]+)',txt)
+[?2004l[?2004h>  if m:
+[?2004l[?2004h>   rid=m.group(1); print('RID',rid)
+[?2004l[?2004h>   for _ in range(12):
+[?2004l[?2004h>    time.sleep(5)
+[?2004l[?2004h>    u='https://blast.ncbi.nlm.nih.gov/Blast.cgi?'+urllib.parse.urlencode({'CMD':'Get','RID':rid,'FORMAT_TYPE':'XML'})
+[?2004l[?2004h>    out=urllib.request.urlopen(u,timeout=60).read().decode()
+[?2004l[?2004h>    if 'Status=WAITING' not in out and 'Status=UNKNOWN' not in out and len(out)>1000:
+[?2004l[?2004h>     open('/tmp/'+name+'.xml','w').write(out); print('saved',len(out)); break
+[?2004l[?2004h>    print('poll',len(out),out[:40])
+[?2004l[?2004h> PY
+[?2004lheavy <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"> <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en"> <head> <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /> <meta name="jig" content="ncbitoggler ncbiautocomplete"/> <meta name="ncbi_app" content="static" /> <meta name="ncbi_pdid" content="blastformatreq" /> <meta name="ncbi_stat" content="false" /> <meta name="ncbi_sessionid" content="219
+RID C5X1H706014
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+python3 - <<'PY'
+import json,urllib.request
+for pid in ['5WJ2','2H5Q','3KZY']:
+ with urllib.request.urlopen('https://data.rcsb.org/rest/v1/core/entry/'+pid) as r:d=json.load(r)
+ print(pid,d.get('struct',{}).get('title'),d.get('rcsb_entry_info',{}).get('experimental_method'))
+PY
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+light <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"> <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en"> <head> <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /> <meta name="jig" content="ncbitoggler ncbiautocomplete"/> <meta name="ncbi_app" content="static" /> <meta name="ncbi_pdid" content="blastformatreq" /> <meta name="ncbi_stat" content="false" /> <meta name="ncbi_sessionid" content="219
+RID C5X3XCM2016
+python3 - <<'PY'
+import urllib.request,urllib.parse,re
+rid='C5X1H706014'
+for params in [
+ {'CMD':'Get','RID':rid,'FORMAT_TYPE':'XML','FORMAT_OBJECT':'Alignment'},
+ {'CMD':'Get','RID':rid,'FORMAT_TYPE':'XML'},
+ {'CMD':'Get','RID':rid,'FORMAT_TYPE':'Text','FORMAT_OBJECT':'Alignment'}]:
+ u='https://blast.ncbi.nlm.nih.gov/Blast.cgi?'+urllib.parse.urlencode(params)
+ s=urllib.request.urlopen(u,timeout=60).read().decode(errors='ignore')
+ print('PARAMS',params,'LEN',len(s),'XML',s.lstrip().startswith('<?xml'),'WAIT',('Status=WAITING' in s))
+ print(re.findall(r'<Hit_def>(.*?)</Hit_def>',s)[:10])
+ print(re.findall(r'\n(?:gi\|[^\n]+|[A-Z0-9_]+\.[0-9]+[^\n]*)',s)[:5])
+ open('/tmp/blast_'+str(len(s))+'.out','w').write(s)
+PY
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+python3 - <<'PY'
+import urllib.parse,urllib.request,re,time
+seq='DVLMTQIPLSLPVSLGDQASISCRSSQSIVHRNGNTYLEWYLLKPGQSPKLLIYKVSNRFSGVPDRFSGSGSGTDFTLKISRVEAEDLGVYYCFQGSHVPYTFGGGTKLEIRRADAAPTVSIFPPSSEQLTSGGASVVCFLNNFYPKDINVKWKIDGSERQNGVLNSWTDQDSKDSTYSMSSTLTLTKDEYERHNSYTCEATHKTSTSPIVKSFNRNQC'
+data=urllib.parse.urlencode({'CMD':'Put','PROGRAM':'blastp','DATABASE':'nr','QUERY':seq,'FORMAT_TYPE':'XML','HITLIST_SIZE':'10'}).encode()
+r=urllib.request.Request('https://blast.ncbi.nlm.nih.gov/Blast.cgi',data=data,headers={'User-Agent':'Mozilla/5.0'})
+s=urllib.request.urlopen(r,timeout=60).read().decode(errors='ignore'); print(s[:300]); m=re.search(r'RID = ([A-Z0-9-]+)',s)
+if m:
+ rid=m.group(1); print('RID',rid)
+ time.sleep(20)
+ u='https://blast.ncbi.nlm.nih.gov/Blast.cgi?'+urllib.parse.urlencode({'CMD':'Get','RID':rid,'FORMAT_TYPE':'XML','FORMAT_OBJECT':'Alignment'})
+ o=urllib.request.urlopen(u,timeout=60).read().decode(errors='ignore'); print('len',len(o),'hits',re.findall(r'<Hit_def>(.*?)</Hit_def>',o)[:10]); open('/tmp/light.xml','w').write(o)
+PY
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+python3 - <<'PY'
+import json,urllib.request
+for pid in ['5WJ2','2H5Q','3KZY']:
+ with urllib.request.urlopen('https://data.rcsb.org/rest/v1/core/polymer_entity/'+pid+'/1') as r:x=json.load(r)
+ print(pid,x.get('rcsb_polymer_entity',{}).get('pdbx_description'))
+ print(x.get('entity_poly',{}).get('pdbx_seq_one_letter_code_can','').replace('\n',''))
+PY
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+poll 24600 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request
+[?2004l[?2004h> for pid in ['5WJ2','2H5Q','3KZY']:
+[?2004l[?2004h>  with urllib.request.urlopen('https://data.rcsb.org/rest/v1/core/entry/'+pid) as r:d=json.load(r)
+[?2004l[?2004h>  print(pid,d.get('struct',{}).get('title'),d.get('rcsb_entry_info',{}).get('experimental_method'))
+[?2004l[?2004h> PY
+[?2004l5WJ2 Crystal structure of the green fluorescent protein Clover X-ray
+2H5Q Crystal structure of mCherry X-ray
+3KZY Crystal structure of SNAP-tag X-ray
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,urllib.parse,re
+[?2004l[?2004h> rid='C5X1H706014'
+[?2004l[?2004h> for params in [
+[?2004l[?2004h>  {'CMD':'Get','RID':rid,'FORMAT_TYPE':'XML','FORMAT_OBJECT':'Alignment'},
+[?2004l[?2004h>  {'CMD':'Get','RID':rid,'FORMAT_TYPE':'XML'},
+[?2004l[?2004h>  {'CMD':'Get','RID':rid,'FORMAT_TYPE':'Text','FORMAT_OBJECT':'Alignment'}]:
+[?2004l[?2004h>  u='https://blast.ncbi.nlm.nih.gov/Blast.cgi?'+urllib.parse.urlencode(params)
+[?2004l[?2004h>  s=urllib.request.urlopen(u,timeout=60).read().decode(errors='ignore')
+[?2004l[?2004h>  print('PARAMS',params,'LEN',len(s),'XML',s.lstrip().startswith('<?xml'),'WAIT',('Status=WAITING' in s))
+[?2004l[?2004h>  print(re.findall(r'<Hit_def>(.*?)</Hit_def>',s)[:10])
+[?2004l[?2004h>  print(re.findall(r'\n(?:gi\|[^\n]+|[A-Z0-9_]+\.[0-9]+[^\n]*)',s)[:5])
+[?2004l[?2004h>  open('/tmp/blast_'+str(len(s))+'.out','w').write(s)
+[?2004l[?2004h> PY
+[?2004lPARAMS {'CMD': 'Get', 'RID': 'C5X1H706014', 'FORMAT_TYPE': 'XML', 'FORMAT_OBJECT': 'Alignment'} LEN 24720 XML False WAIT True
+[]
+[]
+PARAMS {'CMD': 'Get', 'RID': 'C5X1H706014', 'FORMAT_TYPE': 'XML'} LEN 24600 XML False WAIT True
+[]
+[]
+PARAMS {'CMD': 'Get', 'RID': 'C5X1H706014', 'FORMAT_TYPE': 'Text', 'FORMAT_OBJECT': 'Alignment'} LEN 24723 XML False WAIT True
+[]
+[]
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.parse,urllib.request,re,time
+[?2004l[?2004h> seq='DVLMTQIPLSLPVSLGDQASISCRSSQSIVHRNGNTYLEWYLLKPGQSPKLLIYKVSNRFSGVPDRFSGSGSGTDFTLKISRVEAEDLGVYYCFQGSHVPYTFGGGTKLEIRRADAAPTVSIFPPSSEQLTSGGASVVCFLNNFYPKDINVKWKIDGSERQNGVLNSWTDQDSKDSTYSMSSTLTLTKDEYERHNSYTCEATHKTSTSPIVKSFNRNQC'
+[?2004l[?2004h> data=urllib.parse.urlencode({'CMD':'Put','PROGRAM':'blastp','DATABASE':'nr','QUERY':seq,'FORMAT_TYPE':'XML','HITLIST_SIZE':'10'}).encode()
+[?2004l[?2004h> r=urllib.request.Request('https://blast.ncbi.nlm.nih.gov/Blast.cgi',data=data,headers={'User-Agent':'Mozilla/5.0'})
+[?2004l[?2004h> s=urllib.request.urlopen(r,timeout=60).read().decode(errors='ignore'); print(s[:300]); m=re.search(r'RID = ([A-Z0-9-]+)',s)
+[?2004l[?2004h> if m:
+[?2004l[?2004h>  rid=m.group(1); print('RID',rid)
+[?2004l[?2004h>  time.sleep(20)
+[?2004l[?2004h>  u='https://blast.ncbi.nlm.nih.gov/Blast.cgi?'+urllib.parse.urlencode({'CMD':'Get','RID':rid,'FORMAT_TYPE':'XML','FORMAT_OBJECT':'Alignment'})
+[?2004l[?2004h>  o=urllib.request.urlopen(u,timeout=60).read().decode(errors='ignore'); print('len',len(o),'hits',re.findall(r'<Hit_def>(.*?)</Hit_def>',o)[:10]); open('/tmp/light.xml','w').write(o)
+[?2004l[?2004h> PY
+[?2004l<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta name="jig" content="ncbitog
+RID C5X6HZ1S014
+cat > /tmp/build_gblock.py <<'PY'
+import random
+# GFP antigen recognized by the supplied anti-GFP antibody (EGFP/common GFP variant), without initial M.
+gfp='SKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKANFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK'
+# Clover core from 5WJ2, excluding crystallization/tag residues and initial M.
+clover='SKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTFGYGLMCFARYPDHMKQHDFFKSAMPEGYVQERTISFKDDGTYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSHQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK'
+dhfr='ISLIAALAVDRVIGMENAMPWNLPADLAWFKRNTLNKPVIMGRHTWESIGRPLPGRKNIILSSQPGTDDRVTWVKSVDEAIAACGDVPEIMVIGGGRVYEQFLPKAQKLYLTHIDAEVEGDTHFPDYEPDDWESVFSEFHDADAQNSHSYCFEILERR'
+mcherry='VSKGEEDNMAIIKEFMRFKVHMEGSVNGHEFEIEGEGEGRPYEGTQTAKLKVTKGGPLPFAWDILSPQFXSKAYVKHPADIPDYLKLSFPEGFKWERVMNFEDGGVVTVTQDSSLQDGEFIYKVKLRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIKQRLKLKDGGHYDAEVKTTYKAKKPVQLPGAYNVNIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYK'.replace('X','Q')
+snap='PGSDKDCEMKRTTLDSPLGKLELSGCEQGLHEIIFLGKGTSAADAVEVPAPAAVLGGPEPLMQATAWLNAYFHQPEAIEEFPVPALHHPVFQQESFTRQVLWKLLKVVKFGEVISYSHLAALAGNPAATAAVKTALSGNPVPILIPCHRVVQGDLDVGGYEGGLAVKEWLLAHEGHRLGKR'
+link='GSGSG'
+parts=[gfp,clover,dhfr,mcherry,snap]
+for s in parts:
+ assert s and s[0]!='M' and all(c in 'ACDEFGHIKLMNPQRSTVWY' for c in s)
+aa=link.join(parts)
+# Codons selected to be GC-moderate and suitable for E. coli expression.
+cod={
+'A':['GCT','GCC'],'C':['TGC','TGT'],'D':['GAT','GAC'],'E':['GAA','GAG'],'F':['TTC','TTT'],'G':['GGC','GGT','GGA','GGG'],'H':['CAT','CAC'],'I':['ATC','ATT','ATA'],'K':['AAA','AAG'],'L':['CTG','CTT','TTA','TTG'],'M':['ATG'],'N':['AAC','AAT'],'P':['CCG','CCT','CCA','CCC'],'Q':['CAG','CAA'],'R':['CGT','CGC','AGA','AGG'],'S':['AGC','TCC','TCT','TCA','TCG'],'T':['ACC','ACT','ACA','ACG'],'V':['GTG','GTT','GTA','GTC'],'W':['TGG'],'Y':['TAC','TAT']}
+def gc(s): return sum(x in 'GC' for x in s)
+# Choose codons by repeatedly minimizing violations and distance from 50% GC in all affected windows.
+out=[]
+for i,aa0 in enumerate(aa):
+ opts=cod[aa0]
+ best=None
+ for c in opts:
+  trial=''.join(out)+c
+  score=0
+  for j in range(max(0,len(trial)-50),len(trial)-1):
+   w=trial[j:j+50]
+   if len(w)==50: score += max(0,30-gc(w))**2+max(0,gc(w)-35)**2
+  score += abs(gc(c)-1.5)*0.01
+  if best is None or score<best[0]: best=(score,c)
+ out.append(best[1])
+dna=''.join(out)
+print('aa length',len(aa),'nt length',len(dna))
+print('parts',list(map(len,parts)),'linker',len(link))
+print('gc range',min(gc(dna[i:i+50])*2 for i in range(len(dna)-49)),'to',max(gc(dna[i:i+50])*2 for i in range(len(dna)-49)))
+assert len(dna)<=3000
+assert all(30<=gc(dna[i:i+50)*100/50<=70 for i in range(len(dna)-49))
+open('/app/gblock.txt','w').write(dna+'\n')
+PY
+python3 /tmp/build_gblock.py
+sed -i 's/gc(dna\[i:i+50\)\*100/gc(dna[i:i+50])*100/' /tmp/build_gblock.py
+python3 /tmp/build_gblock.py
+python3 - <<'PY'
+from pathlib import Path
+p=Path('/app/gblock.txt')
+s=p.read_text()
+print('exists',p.exists())
+print('newline_count',s.count('\n'))
+seq=s.rstrip('\n')
+print('nt_length',len(seq))
+print('valid_dna',set(seq)<=set('ACGT'))
+print('line_count',len(s.splitlines()))
+gcs=[sum(c in 'GC' for c in seq[i:i+50])*100/50 for i in range(len(seq)-49)]
+print('gc_min',min(gcs),'gc_max',max(gcs))
+print('length_ok',len(seq)<=3000)
+print('gc_ok',all(30<=x<=70 for x in gcs))
+assert s.count('\n')==1 and '\n' not in seq
+assert set(seq)<=set('ACGT')
+assert len(seq)<=3000
+assert all(30<=x<=70 for x in gcs)
+PY
+len 24720 hits []
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request
+[?2004l[?2004h> for pid in ['5WJ2','2H5Q','3KZY']:
+[?2004l[?2004h>  with urllib.request.urlopen('https://data.rcsb.org/rest/v1/core/polymer_entity/'+pid+'/1') as r:x=json.load(r)
+[?2004l[?2004h>  print(pid,x.get('rcsb_polymer_entity',{}).get('pdbx_description'))
+[?2004l[?2004h>  print(x.get('entity_poly',{}).get('pdbx_seq_one_letter_code_can','').replace('\n',''))
+[?2004l[?2004h> PY
+[?2004l5WJ2 Green fluorescent protein
+MGSSHHHHHHSSGENLYFQGHMVSKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTFXVACFSRYPDHMKQHDFFKSAMPEGYVQERTISFKDDGTYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSHQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK
+2H5Q mCherry
+MVSKGEEDNMAIIKEFMRFKVHMEGSVNGHEFEIEGEGEGRPYEGTQTAKLKVTKGGPLPFAWDILSPQFXSKAYVKHPADIPDYLKLSFPEGFKWERVMNFEDGGVVTVTQDSSLQDGEFIYKVKLRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIKQRLKLKDGGHYDAEVKTTYKAKKPVQLPGAYNVNIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYK
+ls -l /app/gblock.txt /tmp/build_gblock.py 2>&1; tail -8 /tmp/build_gblock.py 2>&1
+3KZY Methylated-DNA--protein-cysteine methyltransferase
+GPGSDKDCEMKRTTLDSPLGKLELSGCEQGLHEIIFLGKGTSAADAVEVPAPAAVLGGPEPLMQATAWLNAYFHQPEAIEEFPVPALHHPVFQQESFTRQVLWKLLKVVKFGEVISYSHLAALAGNPAATAAVKTALSGNPVPILIPCHRVVQGDLDVGGYEGGLAVKEWLLAHEGHRLGKR
+[?2004hroot@800fdd991a01:/app# cat > /tmp/build_gblock.py <<'PY'
+[?2004l[?2004h> import random
+[?2004l[?2004h> # GFP antigen recognized by the supplied anti-GFP antibody (EGFP/common GFP variant), without initial M.
+[?2004l[?2004h> gfp='SKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKANFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK'
+[?2004l[?2004h> # Clover core from 5WJ2, excluding crystallization/tag residues and initial M.
+[?2004l[?2004h> clover='SKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTFGYGLMCFARYPDHMKQHDFFKSAMPEGYVQERTISFKDDGTYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSHQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK'
+[?2004l[?2004h> dhfr='ISLIAALAVDRVIGMENAMPWNLPADLAWFKRNTLNKPVIMGRHTWESIGRPLPGRKNIILSSQPGTDDRVTWVKSVDEAIAACGDVPEIMVIGGGRVYEQFLPKAQKLYLTHIDAEVEGDTHFPDYEPDDWESVFSEFHDADAQNSHSYCFEILERR'
+[?2004l[?2004h> mcherry='VSKGEEDNMAIIKEFMRFKVHMEGSVNGHEFEIEGEGEGRPYEGTQTAKLKVTKGGPLPFAWDILSPQFXSKAYVKHPADIPDYLKLSFPEGFKWERVMNFEDGGVVTVTQDSSLQDGEFIYKVKLRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIKQRLKLKDGGHYDAEVKTTYKAKKPVQLPGAYNVNIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYK'.replace('X','Q')
+[?2004l[?2004h> snap='PGSDKDCEMKRTTLDSPLGKLELSGCEQGLHEIIFLGKGTSAADAVEVPAPAAVLGGPEPLMQATAWLNAYFHQPEAIEEFPVPALHHPVFQQESFTRQVLWKLLKVVKFGEVISYSHLAALAGNPAATAAVKTALSGNPVPILIPCHRVVQGDLDVGGYEGGLAVKEWLLAHEGHRLGKR'
+[?2004l[?2004h> link='GSGSG'
+[?2004l[?2004h> parts=[gfp,clover,dhfr,mcherry,snap]
+[?2004l[?2004h> for s in parts:
+[?2004l[?2004h>  assert s and s[0]!='M' and all(c in 'ACDEFGHIKLMNPQRSTVWY' for c in s)
+[?2004l[?2004h> aa=link.join(parts)
+[?2004l[?2004h> # Codons selected to be GC-moderate and suitable for E. coli expression.
+[?2004l[?2004h> cod={
+[?2004l[?2004h> 'A':['GCT','GCC'],'C':['TGC','TGT'],'D':['GAT','GAC'],'E':['GAA','GAG'],'F':['TTC','TTT'],'G':['GGC','GGT','GGA','GGG'],'H':['CAT','CAC'],'I':['ATC','ATT','ATA'],'K':['AAA','AAG'],'L':['CTG','CTT','TTA','TTG'],'M':['ATG'],'N':['AAC','AAT'],'P':['CCG','CCT','CCA','CCC'],'Q':['CAG','CAA'],'R':['CGT','CGC','AGA','AGG'],'S':['AGC','TCC','TCT','TCA','TCG'],'T':['ACC','ACT','ACA','ACG'],'V':['GTG','GTT','GTA','GTC'],'W':['TGG'],'Y':['TAC','TAT']}
+[?2004l[?2004h> def gc(s): return sum(x in 'GC' for x in s)
+[?2004l[?2004h> # Choose codons by repeatedly minimizing violations and distance from 50% GC in all affected windows.
+[?2004l[?2004h> out=[]
+[?2004l[?2004h> for i,aa0 in enumerate(aa):
+[?2004l[?2004h>  opts=cod[aa0]
+[?2004l[?2004h>  best=None
+[?2004l[?2004h>  for c in opts:
+[?2004l[?2004h>   trial=''.join(out)+c
+[?2004l[?2004h>   score=0
+[?2004l[?2004h>   for j in range(max(0,len(trial)-50),len(trial)-1):
+[?2004l[?2004h>    w=trial[j:j+50]
+[?2004l[?2004h>    if len(w)==50: score += max(0,30-gc(w))**2+max(0,gc(w)-35)**2
+[?2004l[?2004h>   score += abs(gc(c)-1.5)*0.01
+[?2004l[?2004h>   if best is None or score<best[0]: best=(score,c)
+[?2004l[?2004h>  out.append(best[1])
+[?2004l[?2004h> dna=''.join(out)
+[?2004l[?2004h> print('aa length',len(aa),'nt length',len(dna))
+[?2004l[?2004h> print('parts',list(map(len,parts)),'linker',len(link))
+[?2004l[?2004h> print('gc range',min(gc(dna[i:i+50])*2 for i in range(len(dna)-49)),'to',max(gc(dna[i:i+50])*2 for i in range(len(dna)-49)))
+[?2004l[?2004h> assert len(dna)<=3000
+[?2004l[?2004h> assert all(30<=gc(dna[i:i+50)*100/50<=70 for i in range(len(dna)-49))
+[?2004l[?2004h> open('/app/gblock.txt','w').write(dna+'\n')
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@800fdd991a01:/app# python3 /tmp/build_gblock.py
+[?2004lpython3 /tmp/build_gblock.py
+  File [35m"/tmp/build_gblock.py"[0m, line [35m37[0m
+    assert all(30<=gc(dna[i:i+50[1;31m)[0m*100/50<=70 for i in range(len(dna)-49))
+                                [1;31m^[0m
+[1;35mSyntaxError[0m: [35mclosing parenthesis ')' does not match opening parenthesis '['[0m
+[?2004hroot@800fdd991a01:/app# sed -i 's/gc(dna\[i:i+50\)\*100/gc(dna[i:i+50])*100/' /tmp/build_gblock.py
+[?2004lsed: -e expression #1, char 44: Unmatched ) or \)
+[?2004hroot@800fdd991a01:/app# python3 /tmp/build_gblock.py
+[?2004l  File [35m"/tmp/build_gblock.py"[0m, line [35m37[0m
+    assert all(30<=gc(dna[i:i+50[1;31m)[0m*100/50<=70 for i in range(len(dna)-49))
+                                [1;31m^[0m
+[1;35mSyntaxError[0m: [35mclosing parenthesis ')' does not match opening parenthesis '['[0m
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> p=Path('/app/gblock.txt')
+[?2004l[?2004h> s=p.read_text()
+[?2004l[?2004h> print('exists',p.exists())
+[?2004l[?2004h> print('newline_count',s.count('\n'))
+[?2004l[?2004h> seq=s.rstrip('\n')
+[?2004l[?2004h> print('nt_length',len(seq))
+[?2004l[?2004h> print('valid_dna',set(seq)<=set('ACGT'))
+[?2004l[?2004h> print('line_count',len(s.splitlines()))
+[?2004l[?2004h> gcs=[sum(c in 'GC' for c in seq[i:i+50])*100/50 for i in range(len(seq)-49)]
+[?2004l[?2004h> print('gc_min',min(gcs),'gc_max',max(gcs))
+[?2004l[?2004h> print('length_ok',len(seq)<=3000)
+[?2004l[?2004h> print('gc_ok',all(30<=x<=70 for x in gcs))
+[?2004l[?2004h> assert s.count('\n')==1 and '\n' not in seq
+[?2004l[?2004h> assert set(seq)<=set('ACGT')
+[?2004l[?2004h> assert len(seq)<=3000
+[?2004l[?2004h> assert all(30<=x<=70 for x in gcs)
+[?2004l[?2004h> PY
+[?2004lTraceback (most recent call last):
+  File [35m"<stdin>"[0m, line [35m3[0m, in [35m<module>[0m
+  File [35m"/usr/local/lib/python3.13/pathlib/_local.py"[0m, line [35m546[0m, in [35mread_text[0m
+    return [31mPathBase.read_text[0m[1;31m(self, encoding, errors, newline)[0m
+           [31m~~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/usr/local/lib/python3.13/pathlib/_abc.py"[0m, line [35m632[0m, in [35mread_text[0m
+    with [31mself.open[0m[1;31m(mode='r', encoding=encoding, errors=errors, newline=newline)[0m as f:
+         [31m~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/usr/local/lib/python3.13/pathlib/_local.py"[0m, line [35m537[0m, in [35mopen[0m
+    return [31mio.open[0m[1;31m(self, mode, buffering, encoding, errors, newline)[0m
+           [31m~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mFileNotFoundError[0m: [35m[Errno 2] No such file or directory: '/app/gblock.txt'[0m
+[?2004hroot@800fdd991a01:/app# ls -l /app/gblock.txt /tmp/build_gblock.py 2>&1; tail -8 /tmp/build_gblock.py 2>&1
+[?2004lls: cannot access '/app/gblock.txt': No such file or directory
+-rw-r--r-- 1 root root 2864 Oct  5 00:52 /tmp/build_gblock.py
+ out.append(best[1])
+dna=''.join(out)
+print('aa length',len(aa),'nt length',len(dna))
+print('parts',list(map(len,parts)),'linker',len(link))
+print('gc range',min(gc(dna[i:i+50])*2 for i in range(len(dna)-49)),'to',max(gc(dna[i:i+50])*2 for i in range(len(dna)-49)))
+assert len(dna)<=3000
+assert all(30<=gc(dna[i:i+50)*100/50<=70 for i in range(len(dna)-49))
+open('/app/gblock.txt','w').write(dna+'\n')
+[?2004hroot@800fdd991a01:/app# python3 /tmp/build_gblock.py
+[?2004l  File [35m"/tmp/build_gblock.py"[0m, line [35m37[0m
+    assert all(30<=gc(dna[i:i+50[1;31m)[0m*100/50<=70 for i in range(len(dna)-49))
+                                [1;31m^[0m
+[1;35mSyntaxError[0m: [35mclosing parenthesis ')' does not match opening parenthesis '['[0m
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> p=Path('/app/gblock.txt')
+[?2004l[?2004h> assert p.is_file(), 'gBlock file missing'
+[?2004l[?2004h> s=p.read_text()
+[?2004l[?2004h> seq=s[:-1] if s.endswith('\n') else s
+[?2004l[?2004h> print('newline_count',s.count('\n'))
+[?2004l[?2004h> print('nt_length',len(seq))
+[?2004l[?2004h> print('valid_dna',bool(seq) and set(seq)<=set('ACGT'))
+[?2004l[?2004h> print('gc_min',min(sum(c in 'GC' for c in seq[i:i+50])*2 for i in range(len(seq)-49)))
+[?2004l[?2004h> print('gc_max',max(sum(c in 'GC' for c in seq[i:i+50])*2 for i in range(len(seq)-49)))
+[?2004l[?2004h> assert s.count('\n')==1 and s.endswith('\n')
+[?2004l[?2004h> assert '\n' not in seq and seq and set(seq)<=set('ACGT')
+[?2004l[?2004h> assert len(seq)<=3000
+[?2004l[?2004h> assert all(30<=sum(c in 'GC' for c in seq[i:i+50])*2<=70 for i in range(len(seq)-49))
+[?2004l[?2004h> print('VALID')
+[?2004l[?2004h> PY
+[?2004lTraceback (most recent call last):
+  File [35m"<stdin>"[0m, line [35m3[0m, in [35m<module>[0m
+[1;35mAssertionError[0m: [35mgBlock file missing[0m
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> p='/tmp/build_gblock.py'
+[?2004l[?2004h> lines=open(p).read().splitlines()
+[?2004l[?2004h> for i,line in enumerate(lines):
+[?2004l[?2004h>     if line.strip().startswith('assert all(30<=gc(dna'):
+[?2004l[?2004h>         lines[i]="assert all(30 <= gc(dna[i:i+50])*100/50 <= 70 for i in range(len(dna)-49))"
+[?2004l[?2004h> open(p,'w').write('\n'.join(lines)+'\n')
+[?2004l[?2004h> print(lines[-5:])
+[?2004l[?2004h> PY
+[?2004l["print('parts',list(map(len,parts)),'linker',len(link))", "print('gc range',min(gc(dna[i:i+50])*2 for i in range(len(dna)-49)),'to',max(gc(dna[i:i+50])*2 for i in range(len(dna)-49)))", 'assert len(dna)<=3000', 'assert all(30 <= gc(dna[i:i+50])*100/50 <= 70 for i in range(len(dna)-49))', "open('/app/gblock.txt','w').write(dna+'\\n')"]
+[?2004hroot@800fdd991a01:/app# python3 /tmp/build_gblock.py
+[?2004laa length 1066 nt length 3198
+parts [237, 237, 158, 233, 181] linker 5
+gc range 42 to 72
+Traceback (most recent call last):
+  File [35m"/tmp/build_gblock.py"[0m, line [35m36[0m, in [35m<module>[0m
+    assert [1;31mlen(dna)<=3000[0m
+           [1;31m^^^^^^^^^^^^^^[0m
+[1;35mAssertionError[0m
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> p=Path('/app/gblock.txt')
+[?2004l[?2004h> assert p.is_file(), 'gBlock file missing'
+[?2004l[?2004h> s=p.read_text()
+[?2004l[?2004h> seq=s[:-1] if s.endswith('\n') else s
+[?2004l[?2004h> windows=[sum(c in 'GC' for c in seq[i:i+50])*100/50 for i in range(len(seq)-49)]
+[?2004l[?2004h> print('newline_count',s.count('\n'))
+[?2004l[?2004h> print('nt_length',len(seq))
+[?2004l[?2004h> print('valid_dna',bool(seq) and set(seq)<=set('ACGT'))
+[?2004l[?2004h> print('gc_min',min(windows),'gc_max',max(windows))
+[?2004l[?2004h> print('length_ok',len(seq)<=3000)
+[?2004l[?2004h> print('gc_ok',all(30<=x<=70 for x in windows))
+[?2004l[?2004h> assert s.count('\n')==1 and s.endswith('\n')
+[?2004l[?2004h> assert seq and set(seq)<=set('ACGT')
+[?2004l[?2004h> assert len(seq)<=3000
+[?2004l[?2004h> assert all(30<=x<=70 for x in windows)
+[?2004l[?2004h> print('VALID')
+[?2004l[?2004h> PY
+[?2004lTraceback (most recent call last):
+  File [35m"<stdin>"[0m, line [35m3[0m, in [35m<module>[0m
+[1;35mAssertionError[0m: [35mgBlock file missing[0m
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,urllib.parse
+[?2004l[?2004h> queries=['Clover FPbase','mCherry FPbase','Kusabira Orange FPbase','Azami Green FPbase','TagRFP FPbase']
+[?2004l[?2004h> for q in queries:
+[?2004l[?2004h>  u='https://www.google.com/search?q='+urllib.parse.quote(q)
+[?2004l[?2004h>  try:
+[?2004l[?2004h>   req=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
+[?2004l[?2004h>   s=urllib.request.urlopen(req,timeout=20).read().decode(errors='ignore')
+[?2004l[?2004h>   print('\nQUERY',q,'LEN',len(s))
+[?2004l[?2004h>   for term in ['excitation','emission','505','610']:
+[?2004l[?2004h>    i=s.lower().find(term.lower()); print(term, s[i:i+300] if i>=0 else '-')
+[?2004l[?2004h>  except Exception as e: print(e)
+[?2004l[?2004h> PY
+[?2004l
+QUERY Clover FPbase LEN 91803
+excitation -
+emission -
+505 -
+610 -
+
+QUERY mCherry FPbase LEN 91889
+excitation -
+emission -
+505 -
+610 -
+
+QUERY Kusabira Orange FPbase LEN 91847
+excitation -
+emission -
+505 505Fapru4q7zqcHc/PxMLpMC7CxaUFdhYUhWBgIoeMbGCM0cIm7vFT6+3ZOkVrU69wjrUrAo4K4bDZ+ds8oPastYwoF/lTL+4s3t6hnLNGvnOasExttWAemx2yvMUaz+JzceIHwv9S/wq/Jl9fWOeoLyhzSEXNb1oOsiQBpnnUbKOiyONQWQOBNFPKz3utJhlwogvAd366O0bGNXb6ymzF61VgobsQdRbLAt9b20nmJdQfRQU7pfen5lw33vrA7cvEfjX2Mg2fwdYZ5lScEqZO2Nn8qvsadQtGkWlOL+v0Of
+610 -
+
+QUERY Azami Green FPbase LEN 91976
+excitation -
+emission -
+505 -
+610 -
+
+QUERY TagRFP FPbase LEN 91852
+excitation -
+emission -
+505 -
+610 -
+[?2004hroot@800fdd991a01:/app# curl -L -A 'Mozilla/5.0' -s 'https://www.fpbase.org/protein/clover/' | grep -Eio '.{0,80}(excitation|emission|505|610).{0,120}' | head -30
+[?2004lbash: curl: command not found
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,urllib.parse,re
+[?2004l[?2004h> qs=['"GYSFTTYTIH" antibody','"GYDYWGQGATL"','"QGSHVPYTFGGGTK"','"YINPSSGYAAYNQNF" antibody','"KVSNRFSGVPDRFSGSGSG"']
+[?2004l[?2004h> for q in qs:
+[?2004l[?2004h>  u='https://www.google.com/search?q='+urllib.parse.quote(q)
+[?2004l[?2004h>  req=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
+[?2004l[?2004h>  s=urllib.request.urlopen(req,timeout=30).read().decode(errors='ignore')
+[?2004l[?2004h>  txt=re.sub('<[^>]+>',' ',s)
+[?2004l[?2004h>  txt=re.sub(r'\\x..',' ',txt)
+[?2004l[?2004h>  print('\nQUERY',q)
+[?2004l[?2004h>  for m in re.finditer('antib',txt,re.I): print(re.sub(r'\s+',' ',txt[max(0,m.start()-180):m.start()+400])[:580])
+[?2004l[?2004h> PY
+[?2004l
+QUERY "GYSFTTYTIH" antibody
+
+QUERY "GYDYWGQGATL"
+
+QUERY "QGSHVPYTFGGGTK"
+
+QUERY "YINPSSGYAAYNQNF" antibody
+
+QUERY "KVSNRFSGVPDRFSGSGSG"
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,urllib.parse,re
+[?2004l[?2004h> for q in ['Clover fluorescent protein excitation peak 505 FPbase','mCherry emission peak 610 FPbase','5WJ2 Clover excitation emission','2H5Q mCherry excitation emission']:
+[?2004l[?2004h>  u='https://www.google.com/search?q='+urllib.parse.quote(q)
+[?2004l[?2004h>  s=urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'}),timeout=30).read().decode(errors='ignore')
+[?2004l[?2004h>  s=re.sub('<[^>]+>',' ',s); s=re.sub(r'\s+',' ',s)
+[?2004l[?2004h>  print('\n',q,'\n',s[:1800])
+[?2004l[?2004h> PY
+[?2004l
+ Clover fluorescent protein excitation peak 505 FPbase 
+  Google Search body{background-color:#fff} window.google = window.google || {};window.google.c = window.google.c || {cap:0}; table,div,span,p{display:none} Please click here if you are not redirected within a few seconds. (function(){var sctm=false;(function(){sctm&&google.tick("load","pbsst");}).call(this);})(); //# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjogMywic291cmNlcyI6WyIiXSwic291cmNlc0NvbnRlbnQiOlsiICJdLCJuYW1lcyI6WyJjbG9zdXJlRHluYW1pY0J1dHRvbiJdLCJtYXBwaW5ncyI6IkFBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEifQ== (function(){var O=function(F,b,v,h,V,D,n,z,M,H){{M=6;while(M!=92)if(M==47)M=(v|9)>=22&&v>>2 =v&&(v+F^b) >3==2?93:50;else if(D==61)D=(M^74)>>4?82:85;else if(D==50)D=(M&77)==M?88:61;else if(D==4)D=3;else if(D==78)V=Math.floor(this.zy+(this.F()-this.Zr)),D=69;else if(D==96)D=(M|7) >1>=7?78:69;else if(D==58){a:if(v.o.length){(v.hV=(v.v&&":TQR:TQR:"(),n),v).v=true;try{Y=v.F(),v.Gy=0,v.cA=0,v.jx=Y,v.Zr=Y,R=cG(12,false,254,2048,true,v,n),z=b?0:10,H=v.F()-v.Zr,v.zy+=H,v.Lk&&v.Lk(H-v.V,v.D,v.Y,v.cA),v.V=0,v.Y=false,v.D=false,H >1&15)==1?58:96)}},nb=173,DY=function(M,F,b,n,v,z,R,H,Y,V){{Y=6;while(Y!=92)if(Y==30)V=R,Y=99;else if(Y==24)H.classList?H.classList.remove(R):Y9(48,6,v,z,R,H)&&Ox(23,F,H,Array.prototype.filter.call(Ox(10,v,H),function(D){return D!=R}).join(b)),Y=15;else if(Y==25)H=new Vm(F,this),z=b.handler||b.src,v=b.listener,b.Xz&&i8(77,25,null,true,b),R=v.call(z,H),Y=30;else if(Y==32)F.A9=b,F.listener=null,F.proxy=null,F.src=null,F.handler=null,Y=0;else if(Y==69)Y=b.A9?94:25;else if(Y==94)R=true,Y=30;else if(Y==6)Y=M;else if(Y==0)Y=n>>2&7?15:24;else{if(Y==15)return V;Y==M?Y=(n&14)==n?69:99:Y==99&&(Y=(n|40)==n?32:0)}}},Fn=109,zF=143,q=function(M,F,b,n,v,z,R,H,Y,V,D){(F&108)==F&&(n=[93,93,67,71,-29,38,n,11,18,-36],V=-~(v&7
+
+ mCherry emission peak 610 FPbase 
+  Google Search body{background-color:#fff} window.google = window.google || {};window.google.c = window.google.c || {cap:0}; table,div,span,p{display:none} Please click here if you are not redirected within a few seconds. (function(){var sctm=false;(function(){sctm&&google.tick("load","pbsst");}).call(this);})(); //# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjogMywic291cmNlcyI6WyIiXSwic291cmNlc0NvbnRlbnQiOlsiICJdLCJuYW1lcyI6WyJjbG9zdXJlRHluYW1pY0J1dHRvbiJdLCJtYXBwaW5ncyI6IkFBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEifQ== (function(){var O=function(F,b,v,h,V,D,n,z,M,H){{M=6;while(M!=92)if(M==47)M=(v|9)>=22&&v>>2 =v&&(v+F^b) >3==2?93:50;else if(D==61)D=(M^74)>>4?82:85;else if(D==50)D=(M&77)==M?88:61;else if(D==4)D=3;else if(D==78)V=Math.floor(this.zy+(this.F()-this.Zr)),D=69;else if(D==96)D=(M|7) >1>=7?78:69;else if(D==58){a:if(v.o.length){(v.hV=(v.v&&":TQR:TQR:"(),n),v).v=true;try{Y=v.F(),v.Gy=0,v.cA=0,v.jx=Y,v.Zr=Y,R=cG(12,false,254,2048,true,v,n),z=b?0:10,H=v.F()-v.Zr,v.zy+=H,v.Lk&&v.Lk(H-v.V,v.D,v.Y,v.cA),v.V=0,v.Y=false,v.D=false,H >1&15)==1?58:96)}},nb=173,DY=function(M,F,b,n,v,z,R,H,Y,V){{Y=6;while(Y!=92)if(Y==30)V=R,Y=99;else if(Y==24)H.classList?H.classList.remove(R):Y9(48,6,v,z,R,H)&&Ox(23,F,H,Array.prototype.filter.call(Ox(10,v,H),function(D){return D!=R}).join(b)),Y=15;else if(Y==25)H=new Vm(F,this),z=b.handler||b.src,v=b.listener,b.Xz&&i8(77,25,null,true,b),R=v.call(z,H),Y=30;else if(Y==32)F.A9=b,F.listener=null,F.proxy=null,F.src=null,F.handler=null,Y=0;else if(Y==69)Y=b.A9?94:25;else if(Y==94)R=true,Y=30;else if(Y==6)Y=M;else if(Y==0)Y=n>>2&7?15:24;else{if(Y==15)return V;Y==M?Y=(n&14)==n?69:99:Y==99&&(Y=(n|40)==n?32:0)}}},Fn=109,zF=143,q=function(M,F,b,n,v,z,R,H,Y,V,D){(F&108)==F&&(n=[93,93,67,71,-29,38,n,11,18,-36],V=-~(v&7
+
+ 5WJ2 Clover excitation emission 
+  Google Search body{background-color:#fff} window.google = window.google || {};window.google.c = window.google.c || {cap:0}; table,div,span,p{display:none} Please click here if you are not redirected within a few seconds. (function(){var sctm=false;(function(){sctm&&google.tick("load","pbsst");}).call(this);})(); //# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjogMywic291cmNlcyI6WyIiXSwic291cmNlc0NvbnRlbnQiOlsiICJdLCJuYW1lcyI6WyJjbG9zdXJlRHluYW1pY0J1dHRvbiJdLCJtYXBwaW5ncyI6IkFBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEifQ== (function(){var O=function(F,b,v,h,V,D,n,z,M,H){{M=6;while(M!=92)if(M==47)M=(v|9)>=22&&v>>2 =v&&(v+F^b) >3==2?93:50;else if(D==61)D=(M^74)>>4?82:85;else if(D==50)D=(M&77)==M?88:61;else if(D==4)D=3;else if(D==78)V=Math.floor(this.zy+(this.F()-this.Zr)),D=69;else if(D==96)D=(M|7) >1>=7?78:69;else if(D==58){a:if(v.o.length){(v.hV=(v.v&&":TQR:TQR:"(),n),v).v=true;try{Y=v.F(),v.Gy=0,v.cA=0,v.jx=Y,v.Zr=Y,R=cG(12,false,254,2048,true,v,n),z=b?0:10,H=v.F()-v.Zr,v.zy+=H,v.Lk&&v.Lk(H-v.V,v.D,v.Y,v.cA),v.V=0,v.Y=false,v.D=false,H >1&15)==1?58:96)}},nb=173,DY=function(M,F,b,n,v,z,R,H,Y,V){{Y=6;while(Y!=92)if(Y==30)V=R,Y=99;else if(Y==24)H.classList?H.classList.remove(R):Y9(48,6,v,z,R,H)&&Ox(23,F,H,Array.prototype.filter.call(Ox(10,v,H),function(D){return D!=R}).join(b)),Y=15;else if(Y==25)H=new Vm(F,this),z=b.handler||b.src,v=b.listener,b.Xz&&i8(77,25,null,true,b),R=v.call(z,H),Y=30;else if(Y==32)F.A9=b,F.listener=null,F.proxy=null,F.src=null,F.handler=null,Y=0;else if(Y==69)Y=b.A9?94:25;else if(Y==94)R=true,Y=30;else if(Y==6)Y=M;else if(Y==0)Y=n>>2&7?15:24;else{if(Y==15)return V;Y==M?Y=(n&14)==n?69:99:Y==99&&(Y=(n|40)==n?32:0)}}},Fn=109,zF=143,q=function(M,F,b,n,v,z,R,H,Y,V,D){(F&108)==F&&(n=[93,93,67,71,-29,38,n,11,18,-36],V=-~(v&7
+
+ 2H5Q mCherry excitation emission 
+  Google Search body{background-color:#fff} window.google = window.google || {};window.google.c = window.google.c || {cap:0}; table,div,span,p{display:none} Please click here if you are not redirected within a few seconds. (function(){var sctm=false;(function(){sctm&&google.tick("load","pbsst");}).call(this);})(); //# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjogMywic291cmNlcyI6WyIiXSwic291cmNlc0NvbnRlbnQiOlsiICJdLCJuYW1lcyI6WyJjbG9zdXJlRHluYW1pY0J1dHRvbiJdLCJtYXBwaW5ncyI6IkFBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEifQ== (function(){var O=function(F,b,v,h,V,D,n,z,M,H){{M=6;while(M!=92)if(M==47)M=(v|9)>=22&&v>>2 =v&&(v+F^b) >3==2?93:50;else if(D==61)D=(M^74)>>4?82:85;else if(D==50)D=(M&77)==M?88:61;else if(D==4)D=3;else if(D==78)V=Math.floor(this.zy+(this.F()-this.Zr)),D=69;else if(D==96)D=(M|7) >1>=7?78:69;else if(D==58){a:if(v.o.length){(v.hV=(v.v&&":TQR:TQR:"(),n),v).v=true;try{Y=v.F(),v.Gy=0,v.cA=0,v.jx=Y,v.Zr=Y,R=cG(12,false,254,2048,true,v,n),z=b?0:10,H=v.F()-v.Zr,v.zy+=H,v.Lk&&v.Lk(H-v.V,v.D,v.Y,v.cA),v.V=0,v.Y=false,v.D=false,H >1&15)==1?58:96)}},nb=173,DY=function(M,F,b,n,v,z,R,H,Y,V){{Y=6;while(Y!=92)if(Y==30)V=R,Y=99;else if(Y==24)H.classList?H.classList.remove(R):Y9(48,6,v,z,R,H)&&Ox(23,F,H,Array.prototype.filter.call(Ox(10,v,H),function(D){return D!=R}).join(b)),Y=15;else if(Y==25)H=new Vm(F,this),z=b.handler||b.src,v=b.listener,b.Xz&&i8(77,25,null,true,b),R=v.call(z,H),Y=30;else if(Y==32)F.A9=b,F.listener=null,F.proxy=null,F.src=null,F.handler=null,Y=0;else if(Y==69)Y=b.A9?94:25;else if(Y==94)R=true,Y=30;else if(Y==6)Y=M;else if(Y==0)Y=n>>2&7?15:24;else{if(Y==15)return V;Y==M?Y=(n&14)==n?69:99:Y==99&&(Y=(n|40)==n?32:0)}}},Fn=109,zF=143,q=function(M,F,b,n,v,z,R,H,Y,V,D){(F&108)==F&&(n=[93,93,67,71,-29,38,n,11,18,-36],V=-~(v&7
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request
+[?2004len(req,timeout=60)); print('\n',name,[(x.get('identifier'),x.get('score')) for x in out.get('result_set',[])[:30]])
+ except Exception as e: print(name,'ERROR',e)
+PY
+[?2004h> seqs={
+[?2004l[?2004h> 'heavy':'QVQLQQSAAELARPGASVKMSCKASGYSFTTYTIHWVKQRPGQGLEWIGYINPSSGYAAYNQNFKDETTLTADPSSSTAYMELNSLTSEDSAVYYCAREKFYGYDYWGQGATLTVSSASTTPPSVYPLAPGSAAQTNSMVTLGCLVKGYFPEPVTVTWNSGSLSSGVHTFPAVLQSDLYTLSSSVTVPSSTWPSQTVTCNVAHPASSTKVDKKIVPRAAA',
+[?2004l[?2004h> 'light':'DVLMTQIPLSLPVSLGDQASISCRSSQSIVHRNGNTYLEWYLLKPGQSPKLLIYKVSNRFSGVPDRFSGSGSGTDFTLKISRVEAEDLGVYYCFQGSHVPYTFGGGTKLEIRRADAAPTVSIFPPSSEQLTSGGASVVCFLNNFYPKDINVKWKIDGSERQNGVLNSWTDQDSKDSTYSMSSTLTLTKDEYERHNSYTCEATHKTSTSPIVKSFNRNQC'}
+[?2004l[?2004h> for name,seq in seqs.items():
+[?2004l[?2004h>  q={'query':{'type':'terminal','service':'sequence','parameters':{'evalue_cutoff':1e-3,'identity_cutoff':0.7,'sequence_type':'protein','value':seq}},'return_type':'entry','request_options':{'paginate':{'start':0,'rows':50},'scoring_method':'sequence'}}
+[?2004l[?2004h>  data=json.dumps(q).encode()
+[?2004l[?2004h>  req=urllib.request.Request('https://search.rcsb.org/rcsbsearch/v2/query',data=data,headers={'Content-Type':'application/json','User-Agent':'Mozilla/5.0'})
+[?2004l[?2004h>  try:
+[?2004l[?2004h>   out=json.load(urllib.request.urlopen(req,timeout=60)); print('\n',name,[(x.get('identifier'),x.get('score')) for x in out.get('result_set',[])[:30]])
+[?2004l[?2004h>  except Exception as e: print(name,'ERROR',e)
+[?2004l[?2004h> PY
+[?2004lheavy ERROR HTTP Error 400: Bad Request
+light ERROR HTTP Error 400: Bad Request
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request
+[?2004l[?2004h> seqs={
+[?2004l[?2004h> 'heavy':'QVQLQQSAAELARPGASVKMSCKASGYSFTTYTIHWVKQRPGQGLEWIGYINPSSGYAAYNQNFKDETTLTADPSSSTAYMELNSLTSEDSAVYYCAREKFYGYDYWGQGATLTVSSASTTPPSVYPLAPGSAAQTNSMVTLGCLVKGYFPEPVTVTWNSGSLSSGVHTFPAVLQSDLYTLSSSVTVPSSTWPSQTVTCNVAHPASSTKVDKKIVPRAAA',
+[?2004l[?2004h> 'light':'DVLMTQIPLSLPVSLGDQASISCRSSQSIVHRNGNTYLEWYLLKPGQSPKLLIYKVSNRFSGVPDRFSGSGSGTDFTLKISRVEAEDLGVYYCFQGSHVPYTFGGGTKLEIRRADAAPTVSIFPPSSEQLTSGGASVVCFLNNFYPKDINVKWKIDGSERQNGVLNSWTDQDSKDSTYSMSSTLTLTKDEYERHNSYTCEATHKTSTSPIVKSFNRNQC'}
+[?2004l[?2004h> for name,seq in seqs.items():
+[?2004l[?2004h>  q={'query':{'type':'terminal','service':'sequence','parameters':{'evalue_cutoff':1.0,'identity_cutoff':0.3,'target':'pdb_protein_sequence','sequence_type':'protein','value':seq}},'return_type':'entry','request_options':{'paginate':{'start':0,'rows':50},'scoring_method':'sequence'}}
+[?2004l[?2004h>  req=urllib.request.Request('https://search.rcsb.org/rcsbsearch/v2/query',data=json.dumps(q).encode(),headers={'Content-Type':'application/json'})
+[?2004l[?2004h>  try:
+[?2004l[?2004h>   out=json.load(urllib.request.urlopen(req,timeout=60)); print('\n',name,[(x.get('identifier'),x.get('score')) for x in out.get('result_set',[])[:30]])
+[?2004l[?2004h>  except Exception as e: print(name,'ERROR',e)
+[?2004l[?2004h> PY
+[?2004lheavy ERROR HTTP Error 400: Bad Request
+light ERROR HTTP Error 400: Bad Request
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,urllib.parse,re
+[?2004l[?2004h> for rid in ['C5X1H706014','C5X6HZ1S014']:
+[?2004l[?2004h>  for fmt in ['SearchInfo','XML','Text']:
+[?2004l[?2004h>   u='https://blast.ncbi.nlm.nih.gov/Blast.cgi?'+urllib.parse.urlencode({'CMD':'Get','RID':rid,'FORMAT_TYPE':fmt,'FORMAT_OBJECT':'Alignment'})
+[?2004l[?2004h>   s=urllib.request.urlopen(u,timeout=60).read().decode(errors='ignore')
+[?2004l[?2004h>   print(rid,fmt,'len',len(s),'waiting',('Status=WAITING' in s),'ready',('Status=READY' in s),'hits',re.findall(r'<Hit_def>(.*?)</Hit_def>',s)[:3])
+[?2004l[?2004h>   if 'Status=READY' in s or '<BlastOutput>' in s: open('/tmp/'+rid+'.'+fmt,'w').write(s)
+[?2004l[?2004h> PY
+[?2004lC5X1H706014 SearchInfo len 24741 waiting True ready False hits []
+C5X1H706014 XML len 24720 waiting True ready False hits []
+C5X1H706014 Text len 24723 waiting True ready False hits []
+C5X6HZ1S014 SearchInfo len 24741 waiting True ready False hits []
+C5X6HZ1S014 XML len 24720 waiting True ready False hits []
+C5X6HZ1S014 Text len 24723 waiting True ready False hits []
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,urllib.parse,re
+[?2004l[?2004h> for q in ['"GYDYWGQGATL" antibody','"QGSHVPYTFGGGTK" antibody','"GYSFTTYTIH"','"KVSNRFSGVPDRFSGSGSG"']:
+[?2004l[?2004h>  for host in ['https://www.google.com/search?q=','https://www.bing.com/search?q=']:
+[?2004l[?2004h>   try:
+[?2004l[?2004h>    s=urllib.request.urlopen(urllib.request.Request(host+urllib.parse.quote(q),headers={'User-Agent':'Mozilla/5.0'}),timeout=30).read().decode(errors='ignore') M[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[K)
+[?2004l[?2004h>    s=re.sub(r'<script.*?</script>|<style.*?</style>',' ',s,flags=re.S); s=re.sub('<[^>]+>',' ',s); s=re.sub(r'\s+',' ',s)
+[?2004l[?2004h>    print('\n',host,q, '\n',s[:2500])
+[?2004l[?2004h>   except Exception as e: print(e)
+[?2004l[?2004h> PY
+[?2004l
+ https://www.google.com/search?q= "GYDYWGQGATL" antibody 
+  Google Search Please click here if you are not redirected within a few seconds. If you're having trouble accessing Google Search, please&nbsp; click here , or send&nbsp; feedback . 
+
+ https://www.bing.com/search?q= "GYDYWGQGATL" antibody 
+  &quot;GYDYWGQGATL&quot; antibody - Search Skip to content Accessibility Feedback All Search Images Videos Maps News More Shopping Flights Tools About 44,300 results Open links in new tab Date fandom.com https://animaljam.fandom.com › wiki › The_Clydesdale_Horse_Claw The Clydesdale Horse Claw - Animal Jam Classic Wiki The The Clydesdale Horse Claw is a members-only den item. The Clydesdale Horse Claw appears to be a claw machine that is … &nbsp; fandom.com https://animaljam.fandom.com › wiki › Clydesdale_Horse_Plushie Clydesdale Horse Plushie - Animal Jam Classic Wiki The Clydesdale Horse Plushie is a small plushie that is based on the Clydesdale Horse animal. It has a large head, thick legs, large … bulahdelahclydesdales.com https://www.bulahdelah clydesdales .com Bulahdelah Clydesdales | Clydesdale Horse Experiences NSW Open daily by appointment. A real Australian outback horse experience — meet, feed and walk with magnificent Clydesdale horses … fandom.com https:// horse -life-wiki-roblox.fandom.com › wiki › Clydesdale Clydesdale | Horse Life Wiki | Fandom Once every 10 minutes there is a 25% chance for a unique species to spawn, if this initial roll succeeds there is then a 30% chance … fandom.com https://mlp.fandom.com › wiki › Cloudsdale Cloudsdale | My Little Pony Friendship is Magic Wiki | Fandom The word &quot;dale&quot; refers to a valley, though the name &quot;Cloudsdale&quot; may be intended as a play on &quot;Clydesdale&quot;, a breed of horse. The … facebook.com https:// www.facebook.com › groups Clydesdales in need of forever homes. - Facebook This group connects people who want to rehome a Clydesdale with those who can provide a loving forever home. Share, adopt and … clydesdalespectacular.com.au https:// clydesdalespectacular .com.au › faq FAQ - Clydesdale Spectacular 14 Jun 2026 &nbsp;&#0183;&#32;We acknowledge the Mununjali people as the Traditional Custodians of the Country where we meet and conduct our … youtube.com https:// www.youtube.com › watch Our Clydesdale Horse Has a Farrier Visit! - YouTube 30 Aug 2026 &nbsp;&#0183;&#32;Our Clydesdale Horse Has a Farrier Visit! New vlog is out now. Real farm work is t always pretty and the start of this … clydesdalespectacular.com.au https:// clydesdales pectacular.com.au Home - Clydesdale Spectacular The Clydesdale breed in Queensland and in the Scenic Rim has been kept alive by the Ehrich Families and their enormous history … facebook.com https:// www.facebook.com › Clydesdales Queensland Cl
+
+ https://www.google.com/search?q= "QGSHVPYTFGGGTK" antibody 
+  Google Search Please click here if you are not redirected within a few seconds. If you're having trouble accessing Google Search, please&nbsp; click here , or send&nbsp; feedback . 
+
+ https://www.bing.com/search?q= "QGSHVPYTFGGGTK" antibody 
+  &quot;QGSHVPYTFGGGTK&quot; antibody - Search Skip to content Accessibility Feedback All Search Images Videos Maps News More Shopping Flights Tools About 53,500 results Open links in new tab Date woolworths.com.au https://www. woolworths .com.au Woolworths Supermarket - Buy Groceries Online Shop online at Woolworths for your groceries. We’re here to help you eat fresher &amp; healthier food, 7 days a week with low prices … &nbsp; woolworths.com.au https://www. woolworths .com.au Woolworths Supermarket - Buy Groceries Online Woolworths Supermarket - Buy Groceries Online woolworthsgroup.com.au https://careers. woolworths group.com.au › en_GB › apply › search-jobs Job Search | Woolworths 1 day ago &nbsp;&#0183;&#32;1-6 of 999+ results. woolworthsgroup.com.au https://www. woolworths group.com.au Woolworths Group Woolworths Group is made up of some of the most recognisable and trusted brands in retailing, serving millions of customers every … everyday.com.au https://www.everyday.com.au Everyday Rewards Australia Join Everyday Rewards today and start collecting Rewards Points every time you shop at Woolworths or at one of our partners. Find … wikipedia.org https:// en.wikipedia.org › wiki › Woolworths_Group Woolworths Group - Wikipedia Woolworths Group Limited is an Australian multinational retail and financial services company, currently headquartered in Bella … wikipedia.org https:// en.wikipedia.org › wiki › Woolworths _(Australia) Woolworths (Australia) - Wikipedia Founded in 1924, Woolworths has since become one of the largest supermarket chains in Australia. The company also operates a … openinghoursau.com https://www.openinghoursau.com › catalogues › woolworths Woolworths Catalogues &amp; Specials 10 Jun 2026 &nbsp;&#0183;&#32;View the latest online catalogues &amp; special buys for Woolworths. Browse your local sales and see the current in-store … woolworths.co.za https://www. woolworths .co.za Woolworths Online Shopping | Woolworths .co.za Online shopping for homeware, fashion, food and beauty. Discover a world of quality and value on the Woolworths online store. woolworths.com.au https://www. woolworths .com.au › shop Shopping Online - Woolworths Offer available only at woolworths.com.au or Woolworths App (excluding Everyday Market from Woolworths orders) to Woolworths … Some results have been removed Pagination 1 2 3 Next Privacy Terms Content was generated with AI. Learn more All Past 24 hours Past week Past month Past year --> --> --> --> --> --> --
+
+ https://www.google.com/search?q= "GYSFTTYTIH" 
+  Google Search Please click here if you are not redirected within a few seconds. If you're having trouble accessing Google Search, please&nbsp; click here , or send&nbsp; feedback . 
+
+ https://www.bing.com/search?q= "GYSFTTYTIH" 
+  &quot;GYSFTTYTIH&quot; - Search Skip to content Accessibility Feedback All Search Images Videos Maps News More Shopping Flights Tools About 3,200 results Open links in new tab Date linkedin.com https://au. linkedin .com › pub › dir › Heidi › Hamilton 4 &quot; Heidi Hamilton &quot; profiles | LinkedIn View the profiles of professionals named &quot;Heidi Hamilton&quot; on LinkedIn. There are 4 professionals named &quot;Heidi Hamilton&quot;, who use … &nbsp; linkedin.com https://www. linkedin .com › company › sunnova Sunnova Energy - LinkedIn Sunnova Energy International Inc. (NYSE: NOVA) is an industry-leading energy services company focused on making clean energy … linkedin.com https://www. linkedin .com › in › heidi j hamilton Heidi Hamilton - Leader committed to building high ... - LinkedIn View Heidi Hamilton’s profile on LinkedIn, a professional community of 1 billion members. linkedin.com https://au. linkedin .com › in Heidi Hamilton - Managing Director @ Flash Point Promotions | LinkedIn As the Director of Flash Point Promotions, I work alongside our people, our standards, our procedures and clients to improve overall … linkedin.com https://ca. linkedin .com › in › prioritysolutions Heidi Hamilton , MBA, FCMC - Strategic Growth Consultant | LinkedIn Strategic Growth Consultant &#183; I have a passion for supporting SME leaders to create an environment of growth and value. I do this … contactout.com https://contactout.com › company Sunnova Energy - Company Profile &amp; Staff Directory | ContactOut Sunnova Energy is a Services for Renewable Energy company located in 20 Greenway Plaza, Suite 475, Houston, Texas, 77046, … signalhire.com https://www.signalhire.com › companies › sunnova - energy -corp › employees List of 309 Sunnova Energy Employees - SignalHire Reveal contacts of top Sunnova Energy managers and employees. theorg.com https://theorg.com › org › sunnova - energy › org-chart › alex- hamilton -mittels… Alex Hamilton Mittelsted - Associate General Counsel, Commercial ... Alex (Alejandra) Hamilton Mittelsted currently serves as Commercial Counsel II at CenterPoint Energy, having previously held the … linkedin.com https://uk. linkedin .com › in › heidi m hamilton Heidi Hamilton - Audit Associate at PwC Newcastle - LinkedIn Currently studying towards my ACA qualification to become a ICAEW Chartered Accountant. &#183; Experience: PwC UK &#183; Education: … linkedin.com https://sg. linkedin .com › company › sunnova -solar- energy SUNNOVA SOLAR ENER
+
+ https://www.google.com/search?q= "KVSNRFSGVPDRFSGSGSG" 
+  Google Search Please click here if you are not redirected within a few seconds. If you're having trouble accessing Google Search, please&nbsp; click here , or send&nbsp; feedback . 
+
+ https://www.bing.com/search?q= "KVSNRFSGVPDRFSGSGSG" 
+  &quot;KVSNRFSGVPDRFSGSGSG&quot; - Search Skip to content Accessibility Feedback All Search Images Videos Maps News More Shopping Flights Tools 163,000 results Open links in new tab Date defence.gov.au https://www.defence.gov.au › about › staff-resources › dreams DREAMS - Defence remote electronic access and mobility service DREAMS (Defence remote electronic access and mobility service) is a digital gateway that enables authorised Defence personnel to … &nbsp; defence.gov.au https:// dreams .defence.gov.au › logon › LogonPoint › tmindex.html Department of Defence Secure access portal for Defence personnel to remotely log in to the Defence protected network. sleepfoundation.org https://www.sleepfoundation.org › dreams Dreams : Why They Happen &amp; What They Mean - Sleep Foundation 2 May 2024 &nbsp;&#0183;&#32;Dreams are an integral part of sleep. Learn about when we dream, the types of dreams, and the competing theories for … wikipedia.org https:// en.wikipedia.org › wiki › Dream Dream - Wikipedia Dreams of absent-minded transgression (DAMT) are dreams wherein the dreamer absent-mindedly performs an action that he or … sleepfoundation.org https://www. sleepfoundation .org › dream Dream Interpretation: What Do Your Dreams Mean? - Sleep Foundation 16 Jul 2025 &nbsp;&#0183;&#32;Like dreams about test-taking, dreams about being late can simply reflect daytime activity carrying over into sleep, or … defence.gov.au https://www.defence.gov.au › sites › default › files › DCAC- DRE … &nbsp;&#0183;&#32;PDF file Defence Common Access Card (DCAC) DREAMS DCAC Login is enabled on the DREAMS network to further strengthen ICT security when accessing the network while working … dreamdictionary.org https://www.dreamdictionary.org Dream Dictionary - Dream Interpretation &amp; Dream Analysis Interpret what your dreams mean with our comprehensive dream dictionary and and see how to analyze their messages and … dreams.co.uk https://www. dreams .co.uk › sleep-matters-club › dream-encyclopaedia The Dream Meanings Dictionary | Search Dreams by A to Z Dreams are a complex reflection of the subconscious mind; they offer insight into our emotions, thoughts, and daily experiences. … edreams.com https://www.e dreams .com Book Flights, Hotels, Vacation Packages &amp; Car Rentals | eDreams Book online for the best deals on cheap flights and hotels with eDreams.com. Search and compare all airlines including low cost for … clevelandclinic.org https://health.clevelandclinic.org › dreams -an
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,urllib.parse
+[?2004l[?2004h> for rid in ['C5X1H706014','C5X6HZ1S014']:
+[?2004l[?2004h>  u='https://blast.ncbi.nlm.nih.gov/Blast.cgi?'+urllib.parse.urlencode({'CMD':'Get','RID':rid,'FORMAT_TYPE':'HTML','FORMAT_OBJECT':'SearchInfo'})
+[?2004l[?2004h>  s=urllib.request.urlopen(u,timeout=60).read().decode(errors='ignore')
+[?2004l[?2004h>  print(rid)
+[?2004l[?2004h>  for line in s.splitlines():
+[?2004l[?2004h>   if any(x in line for x in ['Status=','ThereAreHits','QBlastInfo','ERROR','RID','RTOE']): print(line[:500])
+[?2004l[?2004h> PY
+[?2004lC5X1H706014
+            <a id="account_login" href="https://www.ncbi.nlm.nih.gov/account/?back_url=https%3A%2F%2Fblast%2Encbi%2Enlm%2Enih%2Egov%2FBlast%2Ecgi%3FCMD%3DGet%26FORMAT%5FOBJECT%3DSearchInfo%26FORMAT%5FTYPE%3DHTML%26RID%3DC5X1H706014" class="usa-button header-button">Log in</a>
+                        <li><a id="account_logout" href="https://www.ncbi.nlm.nih.gov/account/signout/?back_url=https%3A%2F%2Fblast%2Encbi%2Enlm%2Enih%2Egov%2FBlast%2Ecgi%3FCMD%3DGet%26FORMAT%5FOBJECT%3DSearchInfo%26FORMAT%5FTYPE%3DHTML%26RID%3DC5X1H706014">Log out</a></li>
+        <a class="ncbi-topnav-root" href="Blast.cgi">BLAST <sup>&reg;</sup></a> <span id="brc"><span class="brcrmbsign">&raquo;</span> <a href="Blast.cgi?PAGE=Nucleotides&amp;PROGRAM=blastn&amp;PAGE_TYPE=BlastSearch&amp;BLAST_SPEC=">blastn suite</a> <span class="brcrmbsign">&raquo;</span> RID-C5X1H706014</span>
+                QBlastInfoBegin
+	                Status=WAITING
+                QBlastInfoEnd
+                <input name="FORMAT_OBJECT" type="hidden" value="SearchInfo"><input name="FORMAT_TYPE" type="hidden" value="HTML"><input name="RID" type="hidden" value="C5X1H706014"><input name="SEARCH_DB_STATUS" type="hidden" value="21"><input name="USER_TYPE" type="hidden" value="2"><input name="_PGR" type="hidden" value="0">                
+                   <input name="CDD_RID" type="hidden" value="" />
+                   <input name="RID" type="hidden" value="C5X1H706014" />
+C5X6HZ1S014
+            <a id="account_login" href="https://www.ncbi.nlm.nih.gov/account/?back_url=https%3A%2F%2Fblast%2Encbi%2Enlm%2Enih%2Egov%2FBlast%2Ecgi%3FCMD%3DGet%26FORMAT%5FOBJECT%3DSearchInfo%26FORMAT%5FTYPE%3DHTML%26RID%3DC5X6HZ1S014" class="usa-button header-button">Log in</a>
+                        <li><a id="account_logout" href="https://www.ncbi.nlm.nih.gov/account/signout/?back_url=https%3A%2F%2Fblast%2Encbi%2Enlm%2Enih%2Egov%2FBlast%2Ecgi%3FCMD%3DGet%26FORMAT%5FOBJECT%3DSearchInfo%26FORMAT%5FTYPE%3DHTML%26RID%3DC5X6HZ1S014">Log out</a></li>
+        <a class="ncbi-topnav-root" href="Blast.cgi">BLAST <sup>&reg;</sup></a> <span id="brc"><span class="brcrmbsign">&raquo;</span> <a href="Blast.cgi?PAGE=Nucleotides&amp;PROGRAM=blastn&amp;PAGE_TYPE=BlastSearch&amp;BLAST_SPEC=">blastn suite</a> <span class="brcrmbsign">&raquo;</span> RID-C5X6HZ1S014</span>
+                QBlastInfoBegin
+	                Status=WAITING
+                QBlastInfoEnd
+                <input name="FORMAT_OBJECT" type="hidden" value="SearchInfo"><input name="FORMAT_TYPE" type="hidden" value="HTML"><input name="RID" type="hidden" value="C5X6HZ1S014"><input name="SEARCH_DB_STATUS" type="hidden" value="21"><input name="USER_TYPE" type="hidden" value="2"><input name="_PGR" type="hidden" value="0">                
+                   <input name="CDD_RID" type="hidden" value="" />
+                   <input name="RID" type="hidden" value="C5X6HZ1S014" />
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,urllib.parse,re,time
+[?2004l[?2004h> seqs={
+[?2004l[?2004h> 'heavy':'QVQLQQSAAELARPGASVKMSCKASGYSFTTYTIHWVKQRPGQGLEWIGYINPSSGYAAYNQNFKDETTLTADPSSSTAYMELNSLTSEDSAVYYCAREKFYGYDYWGQGATLTVSSASTTPPSVYPLAPGSAAQTNSMVTLGCLVKGYFPEPVTVTWNSGSLSSGVHTFPAVLQSDLYTLSSSVTVPSSTWPSQTVTCNVAHPASSTKVDKKIVPRAAA',
+[?2004l[?2004h> 'light':'DVLMTQIPLSLPVSLGDQASISCRSSQSIVHRNGNTYLEWYLLKPGQSPKLLIYKVSNRFSGVPDRFSGSGSGTDFTLKISRVEAEDLGVYYCFQGSHVPYTFGGGTKLEIRRADAAPTVSIFPPSSEQLTSGGASVVCFLNNFYPKDINVKWKIDGSERQNGVLNSWTDQDSKDSTYSMSSTLTLTKDEYERHNSYTCEATHKTSTSPIVKSFNRNQC'}
+[?2004l[?2004h> for name,seq in seqs.items():
+[?2004l[?2004h>  data=urllib.parse.urlencode({'email':'research@example.org','title':name,'program':'blastp','database':'uniprotkb_swissprot','stype':'protein','sequence':seq}).encode()
+[?2004l[?2004h>  req=urllib.request.Request('https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run',data=data,headers={'User-Agent':'Mozilla/5.0'})
+[?2004l[?2004h>  try:
+[?2004l[?2004h>   job=urllib.request.urlopen(req,timeout=60).read().decode().strip(); print(name,'JOB',job)
+[?2004l[?2004h>   for _ in range(12):
+[?2004l[?2004h>    time.sleep(5)
+[?2004l[?2004h>    st=urllib.request.urlopen('https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/status/'+job,timeout=30).read().decode().strip(); print(' status',st)
+[?2004l[?2004h>    if st=='FINISHED':
+[?2004l[?2004h>     out=urllib.request.urlopen('https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/result/'+job+'/out',timeout=60).read().decode(errors='ignore'); open('/tmp/'+name+'_ebi.out','w').write(out); print(out[:3000]); break
+[?2004l[?2004h>  except Exception as e: print(name,'ERROR',e)
+[?2004l[?2004h> PY
+[?2004lheavy JOB ncbiblast-R20261005-015823-0810-97589290-p2m
+ status RUNNING
+ status FINISHED
+BLASTP 2.16.0+
+
+
+Reference: Stephen F. Altschul, Thomas L. Madden, Alejandro A.
+Schaffer, Jinghui Zhang, Zheng Zhang, Webb Miller, and David J.
+Lipman (1997), "Gapped BLAST and PSI-BLAST: a new generation of
+protein database search programs", Nucleic Acids Res. 25:3389-3402.
+
+
+Reference for composition-based statistics: Alejandro A. Schaffer,
+L. Aravind, Thomas L. Madden, Sergei Shavirin, John L. Spouge, Yuri
+I. Wolf, Eugene V. Koonin, and Stephen F. Altschul (2001),
+"Improving the accuracy of PSI-BLAST protein database searches with
+composition-based statistics and other refinements", Nucleic Acids
+Res. 29:2994-3005.
+
+
+
+Database: uniprotkb_swissprot
+           575,748 sequences; 209,017,843 total letters
+
+
+
+Query= EMBOSS_001
+
+Length=220
+                                                                      Score     E
+Sequences producing significant alignments:                          (Bits)  Value
+
+SP:P84751 HVM63_MOUSE Ig heavy chain Mem5 (Fragment) OS=Mus muscul...  289     1e-98
+SP:P0DOX5 IGG1_HUMAN Immunoglobulin gamma-1 heavy chain OS=Homo sa...  244     2e-78
+SP:P01747 HVM03_MOUSE Ig heavy chain V region 36-65 OS=Mus musculu...  188     1e-60
+SP:P01868 IGHG1_MOUSE Ig gamma-1 chain C region secreted form OS=M...  194     3e-60
+SP:P01746 HVM02_MOUSE Ig heavy chain V region 93G7 OS=Mus musculus...  186     2e-59
+SP:P01869 IGH1M_MOUSE Ig gamma-1 chain C region, membrane-bound fo...  194     2e-59
+SP:P20759 IGHG1_RAT Ig gamma-1 chain C region OS=Rattus norvegicus...  189     4e-58
+SP:P20760 IGG2A_RAT Ig gamma-2A chain C region OS=Rattus norvegicu...  184     3e-56
+SP:P0DOX4 IGE_HUMAN Immunoglobulin epsilon heavy chain OS=Homo sap...  188     1e-55
+SP:P01757 HVM13_MOUSE Ig heavy chain V region J558 OS=Mus musculus...  171     1e-53
+SP:P01863 GCAA_MOUSE Ig gamma-2A chain C region, A allele OS=Mus m...  176     7e-53
+SP:P01756 HVM12_MOUSE Ig heavy chain V region MOPC 104E OS=Mus mus...  167     4e-52
+SP:P01865 GCAM_MOUSE Immunoglobulin heavy constant gamma 2A OS=Mus...  174     1e-51
+SP:P01864 GCAB_MOUSE Ig gamma-2A chain C region secreted form OS=M...  171     4e-51
+SP:P01745 HVM01_MOUSE Ig heavy chain V region MPC 11 OS=Mus muscul...  164     7e-51
+SP:P03980 HVM48_MOUSE Ig heavy chain V region TEPC 1017 OS=Mus mus...  164     1e-50
+SP:P01867 IGG2B_MOUSE Immunoglobulin heavy constant gamma 2B OS=Mu...  170     7e-50
+SP:P06329 HVM50_MOUSE Ig heavy chain V region AC38 15.3 OS=Mus mus...  160     2e-49
+SP:P06330 HVM51_MOUSE Ig heavy chain V region AC38 205.12 OS=Mus m...  158     9e-49
+SP:P20761 IGG2B_RAT Ig gamma-2B chain C region OS=Rattus norvegicu...  165     1e-48
+SP:P01753 HVM09_MOUSE Ig heavy chain V region 186-1 OS=Mus musculu...  156     5e-48
+SP:P06328 HVM49_MOUSE Ig heavy chain V region 1-72 OS=Mus musculus...  154     3e-47
+SP:P20762 IGG2C_RAT Ig gamma-2C chain C region OS=Rattus norvegicu...  161     3e-47
+SP:P01749 HVM05_MOUSE Ig heavy chain V region 3 OS=Mus musculus OX...  154     4e-47
+SP:P01748 HVM04_MOUSE Ig heavy chain V region 
+light JOB ncbiblast-R20261005-015842-0216-33091718-p1m
+ status QUEUED
+ status RUNNING
+ status RUNNING
+ status RUNNING
+ status RUNNING
+ status RUNNING
+ status RUNNING
+python3 - <<'PY'
+import urllib.request,json
+for acc in ['P84751']:
+ for fmt in ['json','txt']:
+  u=f'https://rest.uniprot.org/uniprotkb/{acc}.{fmt}'
+  try:
+   s=urllib.request.urlopen(u,timeout=30).read().decode(errors='ignore')
+   open('/tmp/'+acc+'.'+fmt,'w').write(s)
+   print('\nFORMAT',fmt,'LEN',len(s))
+   if fmt=='json':
+    d=json.loads(s)
+    print('protein',d.get('proteinDescription'))
+    print('comments',json.dumps(d.get('comments',[]),indent=2)[:12000])
+    print('refs',json.dumps(d.get('references',[]),indent=2)[:5000])
+   else:
+    for line in s.splitlines():
+     if line.startswith(('ID','DE','CC','DR','RN','RP','RX','RA','RT')): print(line)
+  except Exception as e: print('ERROR',e)
+PY
+ status RUNNING
+python3 - <<'PY'
+import urllib.request,time,re
+job='ncbiblast-R20261005-015842-0216-33091718-p1m'
+for i in range(15):
+ st=urllib.request.urlopen('https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/status/'+job,timeout=30).read().decode().strip(); print(i,st)
+ if st=='FINISHED':
+  s=urllib.request.urlopen('https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/result/'+job+'/out',timeout=60).read().decode(errors='ignore'); open('/tmp/light_ebi.out','w').write(s); print(s[:5000]); break
+ time.sleep(5)
+PY
+ status RUNNING
+ status FINISHED
+BLASTP 2.16.0+
+
+
+Reference: Stephen F. Altschul, Thomas L. Madden, Alejandro A.
+Schaffer, Jinghui Zhang, Zheng Zhang, Webb Miller, and David J.
+Lipman (1997), "Gapped BLAST and PSI-BLAST: a new generation of
+protein database search programs", Nucleic Acids Res. 25:3389-3402.
+
+
+Reference for composition-based statistics: Alejandro A. Schaffer,
+L. Aravind, Thomas L. Madden, Sergei Shavirin, John L. Spouge, Yuri
+I. Wolf, Eugene V. Koonin, and Stephen F. Altschul (2001),
+"Improving the accuracy of PSI-BLAST protein database searches with
+composition-based statistics and other refinements", Nucleic Acids
+Res. 29:2994-3005.
+
+
+
+Database: uniprotkb_swissprot
+           575,748 sequences; 209,017,843 total letters
+
+
+
+Query= EMBOSS_001
+
+Length=219
+                                                                      Score     E
+Sequences producing significant alignments:                          (Bits)  Value
+
+SP:P0DOX7 IGK_HUMAN Immunoglobulin kappa light chain OS=Homo sapie...  251     7e-84
+SP:P01837 IGKC_MOUSE Immunoglobulin kappa constant OS=Mus musculus...  223     3e-74
+SP:P01631 KV2A7_MOUSE Ig kappa chain V-II region 26-10 OS=Mus musc...  204     6e-67
+SP:P01836 KACA_RAT Ig kappa chain C region, A allele OS=Rattus nor...  188     9e-61
+SP:P01835 KACB_RAT Ig kappa chain C region, B allele OS=Rattus nor...  182     2e-58
+SP:P03976 KV2A5_MOUSE Ig kappa chain V-II region 17S29.1 OS=Mus mu...  170     1e-53
+SP:P06310 KV230_HUMAN Immunoglobulin kappa variable 2-30 OS=Homo s...  165     2e-51
+SP:P01630 KV2A6_MOUSE Ig kappa chain V-II region 7S34.1 OS=Mus mus...  164     4e-51
+SP:A2NJV5 KV229_HUMAN Immunoglobulin kappa variable 2-29 OS=Homo s...  164     7e-51
+SP:P01629 KV2A4_MOUSE Ig kappa chain V-II region 2S1.3 OS=Mus musc...  163     1e-50
+SP:A0A075B6S6 KVD30_HUMAN Immunoglobulin kappa variable 2D-30 OS=H...  162     3e-50
+SP:A0A0C4DH68 KV224_HUMAN Immunoglobulin kappa variable 2-24 OS=Ho...  161     6e-50
+SP:A0A075B6S2 KVD29_HUMAN Immunoglobulin kappa variable 2D-29 OS=H...  158     9e-49
+SP:P01615 KVD28_HUMAN Immunoglobulin kappa variable 2D-28 OS=Homo ...  158     9e-49
+SP:A0A075B6P5 KV228_HUMAN Immunoglobulin kappa variable 2-28 OS=Ho...  158     9e-49
+SP:P0DOX8 IGL1_HUMAN Immunoglobulin lambda-1 light chain OS=Homo s...  161     1e-48
+SP:A0A075B6R9 KVD24_HUMAN Probable non-functional immunoglobulin k...  157     4e-48
+SP:P84750 KVM5_MOUSE Ig kappa chain V region Mem5 (Fragment) OS=Mu...  155     1e-47
+SP:P01614 KVD40_HUMAN Immunoglobulin kappa variable 2D-40 OS=Homo ...  151     5e-46
+SP:A0A087WW87 KV240_HUMAN Immunoglobulin kappa variable 2-40 OS=Ho...  151     5e-46
+SP:P01618 KV1_CANLF Ig kappa chain V region GOM OS=Canis lupus fam...  150     1e-45
+SP:P01628 KV2A3_MOUSE Ig kappa chain V-II region MOPC 511 OS=Mus m...  150     2e-45
+SP:P01626 KV2A1_MOUSE Ig kappa chain V-II region MOPC 167 OS=Mus m...  145     1e-43
+SP:P01664 KV3AC_MOUSE Ig kappa chain V-III region CBPC 101 OS=Mus ...  144     4e-43
+SP:P01660 KV3A8_MOUSE Ig kappa chain V-III reg
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,json
+[?2004l[?2004h> for acc in ['P84751']:
+[?2004l[?2004h>  for fmt in ['json','txt']:
+[?2004l[?2004h>   u=f'https://rest.uniprot.org/uniprotkb/{acc}.{fmt}'
+[?2004l[?2004h>   try:
+[?2004l[?2004h>    s=urllib.request.urlopen(u,timeout=30).read().decode(errors='ignore')
+[?2004l[?2004h>    open('/tmp/'+acc+'.'+fmt,'w').write(s)
+[?2004l[?2004h>    print('\nFORMAT',fmt,'LEN',len(s))
+[?2004l[?2004h>    if fmt=='json':
+[?2004l[?2004h>     d=json.loads(s)
+[?2004l[?2004h>     print('protein',d.get('proteinDescription'))
+[?2004l[?2004h>     print('comments',json.dumps(d.get('comments',[]),indent=2)[:12000])
+[?2004l[?2004h>     print('refs',json.dumps(d.get('references',[]),indent=2)[:5000])
+[?2004l[?2004h>    else:
+[?2004l[?2004h>     for line in s.splitlines():
+[?2004l[?2004h>      if line.startswith(('ID','DE','CC','DR','RN','RP','RX','RA','RT')): print(line)
+[?2004l[?2004h>   except Exception as e: print('ERROR',e)
+[?2004l[?2004h> PY
+[?2004l
+FORMAT json LEN 19377
+protein {'recommendedName': {'fullName': {'value': 'Ig heavy chain Mem5'}}, 'flag': 'Fragment'}
+comments [
+  {
+    "texts": [
+      {
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000269",
+            "source": "PubMed",
+            "id": "12414967"
+          }
+        ],
+        "value": "Anti-influenza H3N2 neuraminidase antibody"
+      }
+    ],
+    "commentType": "FUNCTION"
+  },
+  {
+    "commentType": "SUBCELLULAR LOCATION",
+    "subcellularLocations": [
+      {
+        "location": {
+          "value": "Secreted",
+          "id": "SL-0243"
+        }
+      }
+    ]
+  }
+]
+refs [
+  {
+    "referenceNumber": 1,
+    "citation": {
+      "id": "12414967",
+      "citationType": "journal article",
+      "authors": [
+        "Gulati U.",
+        "Hwang C.C.",
+        "Venkatramani L.",
+        "Gulati S.",
+        "Stray S.J.",
+        "Lee J.T.",
+        "Laver W.G.",
+        "Bochkarev A.",
+        "Zlotnick A.",
+        "Air G.M."
+      ],
+      "citationCrossReferences": [
+        {
+          "database": "PubMed",
+          "id": "12414967"
+        },
+        {
+          "database": "DOI",
+          "id": "10.1128/jvi.76.23.12274-12280.2002"
+        }
+      ],
+      "title": "Antibody epitopes on the neuraminidase of a recent H3N2 influenza virus (A/Memphis/31/98).",
+      "publicationDate": "2002",
+      "journal": "J. Virol.",
+      "firstPage": "12274",
+      "lastPage": "12280",
+      "volume": "76"
+    },
+    "referencePositions": [
+      "PROTEIN SEQUENCE OF 1-19",
+      "NUCLEOTIDE SEQUENCE [MRNA] OF 20-237",
+      "FUNCTION"
+    ],
+    "referenceComments": [
+      {
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000312",
+            "source": "EMBL",
+            "id": "ABB81885.1"
+          }
+        ],
+        "value": "BALB/cJ",
+        "type": "STRAIN"
+      }
+    ],
+    "evidences": [
+      {
+        "evidenceCode": "ECO:0000305"
+      },
+      {
+        "evidenceCode": "ECO:0000312",
+        "source": "EMBL",
+        "id": "ABB81885.1"
+      }
+    ]
+  }
+]
+
+FORMAT txt LEN 8605
+ID   HVM63_MOUSE             Reviewed;         237 AA.
+DE   RecName: Full=Ig heavy chain Mem5;
+DE   Flags: Fragment;
+RN   [1] {ECO:0000305, ECO:0000312|EMBL:ABB81885.1}
+RP   PROTEIN SEQUENCE OF 1-19, NUCLEOTIDE SEQUENCE [MRNA] OF 20-237, AND
+RP   FUNCTION.
+RX   PubMed=12414967; DOI=10.1128/jvi.76.23.12274-12280.2002;
+RA   Gulati U., Hwang C.C., Venkatramani L., Gulati S., Stray S.J., Lee J.T.,
+RA   Laver W.G., Bochkarev A., Zlotnick A., Air G.M.;
+RT   "Antibody epitopes on the neuraminidase of a recent H3N2 influenza virus
+RT   (A/Memphis/31/98).";
+CC   -!- FUNCTION: Anti-influenza H3N2 neuraminidase antibody.
+CC       {ECO:0000269|PubMed:12414967}.
+CC   -!- SUBCELLULAR LOCATION: Secreted.
+CC   ---------------------------------------------------------------------------
+CC   Copyrighted by the UniProt Consortium, see https://www.uniprot.org/terms
+CC   Distributed under the Creative Commons Attribution (CC BY 4.0) License
+CC   ---------------------------------------------------------------------------
+DR   EMBL; DQ220746; ABB81885.1; -; mRNA.
+DR   PDB; 1ZAN; X-ray; 1.70 A; H=1-220.
+DR   PDB; 2ADF; X-ray; 1.90 A; H=1-220.
+DR   PDB; 2AEP; X-ray; 2.10 A; H=1-217.
+DR   PDB; 2AEQ; X-ray; 3.00 A; H=1-217.
+DR   PDB; 2G2R; X-ray; 2.75 A; B/H=1-221.
+DR   PDB; 2G5B; X-ray; 2.30 A; B/D/F/H=1-219.
+DR   PDB; 3BKC; X-ray; 1.90 A; H=1-220.
+DR   PDB; 3BKJ; X-ray; 1.59 A; H=2-220.
+DR   PDB; 3BKM; X-ray; 1.60 A; H=2-220.
+DR   PDB; 4HDI; X-ray; 2.45 A; B/H=1-220.
+DR   AlphaFoldDB; P84751; -.
+DR   MDposit; P84751; -.
+DR   SMR; P84751; -.
+DR   FunCoup; P84751; 236.
+DR   jPOST; P84751; -.
+DR   PeptideAtlas; P84751; -.
+DR   InParanoid; P84751; -.
+DR   EvolutionaryTrace; P84751; -.
+DR   Proteomes; UP000000589; Unplaced.
+DR   RNAct; P84751; protein.
+DR   GO; GO:0005576; C:extracellular region; IEA:UniProtKB-SubCell.
+DR   GO; GO:0003823; F:antigen binding; IBA:GO_Central.
+DR   GO; GO:0016064; P:immunoglobulin mediated immune response; IBA:GO_Central.
+DR   CDD; cd21817; IgC1_CH1_IgEG; 1.
+DR   CDD; cd04981; IgV_H; 1.
+DR   FunFam; 2.60.40.10:FF:001739; Ig gamma-2A chain C region; 1.
+DR   FunFam; 2.60.40.10:FF:001372; Ig heavy chain V region M603; 1.
+DR   Gene3D; 2.60.40.10; Immunoglobulins; 2.
+DR   InterPro; IPR007110; Ig-like_dom.
+DR   InterPro; IPR036179; Ig-like_dom_sf.
+DR   InterPro; IPR013783; Ig-like_fold.
+DR   InterPro; IPR003597; Ig_C1-set.
+DR   InterPro; IPR003599; Ig_sub.
+DR   InterPro; IPR013106; Ig_V-set.
+DR   InterPro; IPR050199; IgHV.
+DR   PANTHER; PTHR23266; IMMUNOGLOBULIN HEAVY CHAIN; 1.
+DR   Pfam; PF07654; C1-set; 1.
+DR   Pfam; PF07686; V-set; 1.
+DR   SMART; SM00409; IG; 1.
+DR   SMART; SM00407; IGc1; 1.
+DR   SMART; SM00406; IGv; 1.
+DR   SUPFAM; SSF48726; Immunoglobulin; 2.
+DR   PROSITE; PS50835; IG_LIKE; 2.
+DR   PDBsum; 1ZAN; -.
+DR   PDBsum; 2ADF; -.
+DR   PDBsum; 2AEP; -.
+DR   PDBsum; 2AEQ; -.
+DR   PDBsum; 2G2R; -.
+DR   PDBsum; 2G5B; -.
+DR   PDBsum; 3BKC; -.
+DR   PDBsum; 3BKJ; -.
+DR   PDBsum; 3BKM; -.
+DR   PDBsum; 4HDI; -.
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,time,re
+[?2004l[?2004h> job='ncbiblast-R20261005-015842-0216-33091718-p1m'
+[?2004l[?2004h> for i in range(15):
+[?2004l[?2004h>  st=urllib.request.urlopen('https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/status/'+job,timeout=30).read().decode().strip(); print(i,st)
+[?2004l[?2004h>  if st=='FINISHED':
+[?2004l[?2004h>   s=urllib.request.urlopen('https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/result/'+job+'/out',timeout=60).read().decode(errors='ignore'); open('/tmp/light_ebi.out','w').write(s); print(s[:5000]); break
+[?2004l[?2004h>  time.sleep(5)
+[?2004l[?2004h> PY
+[?2004l0 FINISHED
+BLASTP 2.16.0+
+
+
+Reference: Stephen F. Altschul, Thomas L. Madden, Alejandro A.
+Schaffer, Jinghui Zhang, Zheng Zhang, Webb Miller, and David J.
+Lipman (1997), "Gapped BLAST and PSI-BLAST: a new generation of
+protein database search programs", Nucleic Acids Res. 25:3389-3402.
+
+
+Reference for composition-based statistics: Alejandro A. Schaffer,
+L. Aravind, Thomas L. Madden, Sergei Shavirin, John L. Spouge, Yuri
+I. Wolf, Eugene V. Koonin, and Stephen F. Altschul (2001),
+"Improving the accuracy of PSI-BLAST protein database searches with
+composition-based statistics and other refinements", Nucleic Acids
+Res. 29:2994-3005.
+
+
+
+Database: uniprotkb_swissprot
+           575,748 sequences; 209,017,843 total letters
+
+
+
+Query= EMBOSS_001
+
+Length=219
+                                                                      Score     E
+Sequences producing significant alignments:                          (Bits)  Value
+
+SP:P0DOX7 IGK_HUMAN Immunoglobulin kappa light chain OS=Homo sapie...  251     7e-84
+SP:P01837 IGKC_MOUSE Immunoglobulin kappa constant OS=Mus musculus...  223     3e-74
+SP:P01631 KV2A7_MOUSE Ig kappa chain V-II region 26-10 OS=Mus musc...  204     6e-67
+SP:P01836 KACA_RAT Ig kappa chain C region, A allele OS=Rattus nor...  188     9e-61
+SP:P01835 KACB_RAT Ig kappa chain C region, B allele OS=Rattus nor...  182     2e-58
+SP:P03976 KV2A5_MOUSE Ig kappa chain V-II region 17S29.1 OS=Mus mu...  170     1e-53
+SP:P06310 KV230_HUMAN Immunoglobulin kappa variable 2-30 OS=Homo s...  165     2e-51
+SP:P01630 KV2A6_MOUSE Ig kappa chain V-II region 7S34.1 OS=Mus mus...  164     4e-51
+SP:A2NJV5 KV229_HUMAN Immunoglobulin kappa variable 2-29 OS=Homo s...  164     7e-51
+SP:P01629 KV2A4_MOUSE Ig kappa chain V-II region 2S1.3 OS=Mus musc...  163     1e-50
+SP:A0A075B6S6 KVD30_HUMAN Immunoglobulin kappa variable 2D-30 OS=H...  162     3e-50
+SP:A0A0C4DH68 KV224_HUMAN Immunoglobulin kappa variable 2-24 OS=Ho...  161     6e-50
+SP:A0A075B6S2 KVD29_HUMAN Immunoglobulin kappa variable 2D-29 OS=H...  158     9e-49
+SP:P01615 KVD28_HUMAN Immunoglobulin kappa variable 2D-28 OS=Homo ...  158     9e-49
+SP:A0A075B6P5 KV228_HUMAN Immunoglobulin kappa variable 2-28 OS=Ho...  158     9e-49
+SP:P0DOX8 IGL1_HUMAN Immunoglobulin lambda-1 light chain OS=Homo s...  161     1e-48
+SP:A0A075B6R9 KVD24_HUMAN Probable non-functional immunoglobulin k...  157     4e-48
+SP:P84750 KVM5_MOUSE Ig kappa chain V region Mem5 (Fragment) OS=Mu...  155     1e-47
+SP:P01614 KVD40_HUMAN Immunoglobulin kappa variable 2D-40 OS=Homo ...  151     5e-46
+SP:A0A087WW87 KV240_HUMAN Immunoglobulin kappa variable 2-40 OS=Ho...  151     5e-46
+SP:P01618 KV1_CANLF Ig kappa chain V region GOM OS=Canis lupus fam...  150     1e-45
+SP:P01628 KV2A3_MOUSE Ig kappa chain V-II region MOPC 511 OS=Mus m...  150     2e-45
+SP:P01626 KV2A1_MOUSE Ig kappa chain V-II region MOPC 167 OS=Mus m...  145     1e-43
+SP:P01664 KV3AC_MOUSE Ig kappa chain V-III region CBPC 101 OS=Mus ...  144     4e-43
+SP:P01660 KV3A8_MOUSE Ig kappa chain V-III region PC 3741/TEPC 111...  144     4e-43
+SP:A0A0A0MRZ7 KVD26_HUMAN Immunoglobulin kappa variable 2D-26 OS=H...  143     7e-43
+SP:P01665 KV3AD_MOUSE Ig kappa chain V-III region PC 7043 OS=Mus m...  140     6e-42
+SP:P01667 KV3AF_MOUSE Ig kappa chain V-III region PC 6308 OS=Mus m...  140     9e-42
+SP:P01662 KV3AA_MOUSE Ig kappa chain V-III region ABPC 22/PC 9245 ...  139     2e-41
+SP:P01659 KV3A7_MOUSE Ig kappa chain V-III region TEPC 124 OS=Mus ...  139     2e-41
+SP:P01834 IGKC_HUMAN Immunoglobulin kappa constant OS=Homo sapiens...  139     3e-41
+SP:P01670 KV3AI_MOUSE Ig kappa chain V-III region PC 6684 OS=Mus m...  138     5e-41
+SP:P01666 KV3AE_MOUSE Ig kappa chain V-III region PC 7183 OS=Mus m...  138     5e-41
+SP:P01634 KV5A2_MOUSE Ig kappa chain V-V region MOPC 21 OS=Mus mus...  139     5e-41
+SP:P01669 KV3AH_MOUSE Ig kappa chain V-III region PC 7769 OS=Mus m...  137     1e-40
+SP:P01649 KV5AG_MOUSE Ig kappa chain V-V regions OS=Mus musculus O...  137     1e-40
+SP:P01658 KV3A6_MOUSE Ig kappa chain V-III region MOPC 321 OS=Mus ...  138     1e-40
+SP:P01668 KV3AG_MOUSE Ig kappa chain V-III region PC 7210 OS=Mus m...  137     1e-40
+SP:P01656 KV3A3_MOUSE Ig kappa chain V-III region MOPC 70 OS=Mus m...  137     1e-40
+SP:P01661 KV3A9_MOUSE Ig kappa chain V-III region MOPC 63 OS=Mus m...  137     2e-40
+SP:P03977 KV3A4_MOUSE Ig kappa chain V-III region 50S10.1 OS=Mus m...  137     2e-40
+SP:P01654 KV3A1_MOUSE Ig kappa chain V-III region PC 2880/PC 1229 ...  136     4e-40
+SP:P01671 KV3AJ_MOUSE Ig kappa chain V-III region PC 7175 OS=Mus m...  135     6e-40
+SP:P01673 KV3AL_MOUSE Ig kappa chain V-III region PC 2485/PC 4039 ...  135     8e-40
+SP:P01672 KV3AK_MOUSE Ig kappa chain V-III region PC 7940 OS=Mus m...  135     8e-40
+SP:P01633 KV5A1_MOUSE Immunoglobulin kappa chain variable 6-17 OS=...  135     2e-39
+SP:P01627 KV2A2_MOUSE Immunoglobulin kappa variable 2-112 OS=Mus m...  134     2e-39
+SP:P01663 KV3AB_MOUSE Ig kappa chain V-III region PC 4050 OS=Mus m...  133     5e-39
+SP:P01
+[?2004hroot@800fdd991a01:/app# grep -E '^(ID|DE|CC|DR|RN|RP|RX|RA|RT)' /tmp/P84751.txt 2>/dev/null | head -200; printf '\n--- P84750 ---\n'; python3 - <<'PY'
+[?2004l[?2004h> import urllib.request
+[?2004l[?2004h> for acc in ['P84750']:
+[?2004l[?2004h>  s=urllib.request.urlopen(f'https://rest.uniprot.org/uniprotkb/{acc}.txt',timeout=30).read().decode(errors='ignore')
+[?2004l[?2004h>  open('/tmp/'+acc+'.txt','w').write(s)
+[?2004l[?2004h>  print('\n'.join(x for x in s.splitlines() if x.startswith(('ID','DE','CC','DR','RN','RP','RX','RA','RT'))))
+[?2004l[?2004h> PY
+[?2004lID   HVM63_MOUSE             Reviewed;         237 AA.
+DE   RecName: Full=Ig heavy chain Mem5;
+DE   Flags: Fragment;
+RN   [1] {ECO:0000305, ECO:0000312|EMBL:ABB81885.1}
+RP   PROTEIN SEQUENCE OF 1-19, NUCLEOTIDE SEQUENCE [MRNA] OF 20-237, AND
+RP   FUNCTION.
+RX   PubMed=12414967; DOI=10.1128/jvi.76.23.12274-12280.2002;
+RA   Gulati U., Hwang C.C., Venkatramani L., Gulati S., Stray S.J., Lee J.T.,
+RA   Laver W.G., Bochkarev A., Zlotnick A., Air G.M.;
+RT   "Antibody epitopes on the neuraminidase of a recent H3N2 influenza virus
+RT   (A/Memphis/31/98).";
+CC   -!- FUNCTION: Anti-influenza H3N2 neuraminidase antibody.
+CC       {ECO:0000269|PubMed:12414967}.
+CC   -!- SUBCELLULAR LOCATION: Secreted.
+CC   ---------------------------------------------------------------------------
+CC   Copyrighted by the UniProt Consortium, see https://www.uniprot.org/terms
+CC   Distributed under the Creative Commons Attribution (CC BY 4.0) License
+CC   ---------------------------------------------------------------------------
+DR   EMBL; DQ220746; ABB81885.1; -; mRNA.
+DR   PDB; 1ZAN; X-ray; 1.70 A; H=1-220.
+DR   PDB; 2ADF; X-ray; 1.90 A; H=1-220.
+DR   PDB; 2AEP; X-ray; 2.10 A; H=1-217.
+DR   PDB; 2AEQ; X-ray; 3.00 A; H=1-217.
+DR   PDB; 2G2R; X-ray; 2.75 A; B/H=1-221.
+DR   PDB; 2G5B; X-ray; 2.30 A; B/D/F/H=1-219.
+DR   PDB; 3BKC; X-ray; 1.90 A; H=1-220.
+DR   PDB; 3BKJ; X-ray; 1.59 A; H=2-220.
+DR   PDB; 3BKM; X-ray; 1.60 A; H=2-220.
+DR   PDB; 4HDI; X-ray; 2.45 A; B/H=1-220.
+DR   AlphaFoldDB; P84751; -.
+DR   MDposit; P84751; -.
+DR   SMR; P84751; -.
+DR   FunCoup; P84751; 236.
+DR   jPOST; P84751; -.
+DR   PeptideAtlas; P84751; -.
+DR   InParanoid; P84751; -.
+DR   EvolutionaryTrace; P84751; -.
+DR   Proteomes; UP000000589; Unplaced.
+DR   RNAct; P84751; protein.
+DR   GO; GO:0005576; C:extracellular region; IEA:UniProtKB-SubCell.
+DR   GO; GO:0003823; F:antigen binding; IBA:GO_Central.
+DR   GO; GO:0016064; P:immunoglobulin mediated immune response; IBA:GO_Central.
+DR   CDD; cd21817; IgC1_CH1_IgEG; 1.
+DR   CDD; cd04981; IgV_H; 1.
+DR   FunFam; 2.60.40.10:FF:001739; Ig gamma-2A chain C region; 1.
+DR   FunFam; 2.60.40.10:FF:001372; Ig heavy chain V region M603; 1.
+DR   Gene3D; 2.60.40.10; Immunoglobulins; 2.
+DR   InterPro; IPR007110; Ig-like_dom.
+DR   InterPro; IPR036179; Ig-like_dom_sf.
+DR   InterPro; IPR013783; Ig-like_fold.
+DR   InterPro; IPR003597; Ig_C1-set.
+DR   InterPro; IPR003599; Ig_sub.
+DR   InterPro; IPR013106; Ig_V-set.
+DR   InterPro; IPR050199; IgHV.
+DR   PANTHER; PTHR23266; IMMUNOGLOBULIN HEAVY CHAIN; 1.
+DR   Pfam; PF07654; C1-set; 1.
+DR   Pfam; PF07686; V-set; 1.
+DR   SMART; SM00409; IG; 1.
+DR   SMART; SM00407; IGc1; 1.
+DR   SMART; SM00406; IGv; 1.
+DR   SUPFAM; SSF48726; Immunoglobulin; 2.
+DR   PROSITE; PS50835; IG_LIKE; 2.
+DR   PDBsum; 1ZAN; -.
+DR   PDBsum; 2ADF; -.
+DR   PDBsum; 2AEP; -.
+DR   PDBsum; 2AEQ; -.
+DR   PDBsum; 2G2R; -.
+DR   PDBsum; 2G5B; -.
+DR   PDBsum; 3BKC; -.
+DR   PDBsum; 3BKJ; -.
+DR   PDBsum; 3BKM; -.
+DR   PDBsum; 4HDI; -.
+
+--- P84750 ---
+ID   KVM5_MOUSE              Reviewed;         121 AA.
+DE   RecName: Full=Ig kappa chain V region Mem5;
+DE   Flags: Fragment;
+RN   [1] {ECO:0000305, ECO:0000312|EMBL:ABB81886.1}
+RP   PROTEIN SEQUENCE OF 1-14, NUCLEOTIDE SEQUENCE [MRNA] OF 15-121, AND
+RP   FUNCTION.
+RX   PubMed=12414967; DOI=10.1128/jvi.76.23.12274-12280.2002;
+RA   Gulati U., Hwang C.C., Venkatramani L., Gulati S., Stray S.J., Lee J.T.,
+RA   Laver W.G., Bochkarev A., Zlotnick A., Air G.M.;
+RT   "Antibody epitopes on the neuraminidase of a recent H3N2 influenza virus
+RT   (A/Memphis/31/98).";
+CC   -!- FUNCTION: Anti-influenza H3N2 neuraminidase antibody.
+CC       {ECO:0000269|PubMed:12414967}.
+CC   -!- SUBCELLULAR LOCATION: Secreted.
+CC   ---------------------------------------------------------------------------
+CC   Copyrighted by the UniProt Consortium, see https://www.uniprot.org/terms
+CC   Distributed under the Creative Commons Attribution (CC BY 4.0) License
+CC   ---------------------------------------------------------------------------
+DR   EMBL; DQ220747; ABB81886.1; -; mRNA.
+DR   PDB; 2AEP; X-ray; 2.10 A; L=1-121.
+DR   AlphaFoldDB; P84750; -.
+DR   MDposit; P84750; -.
+DR   SMR; P84750; -.
+DR   FunCoup; P84750; 669.
+DR   InParanoid; P84750; -.
+DR   EvolutionaryTrace; P84750; -.
+DR   Proteomes; UP000000589; Unplaced.
+DR   RNAct; P84750; protein.
+DR   GO; GO:0005576; C:extracellular region; IEA:UniProtKB-SubCell.
+DR   GO; GO:0019814; C:immunoglobulin complex; IBA:GO_Central.
+DR   GO; GO:0006955; P:immune response; IBA:GO_Central.
+DR   CDD; cd04980; IgV_L_kappa; 1.
+DR   FunFam; 2.60.40.10:FF:001827; Immunoglobulin kappa variable 4-1; 1.
+DR   Gene3D; 2.60.40.10; Immunoglobulins; 1.
+DR   InterPro; IPR007110; Ig-like_dom.
+DR   InterPro; IPR036179; Ig-like_dom_sf.
+DR   InterPro; IPR013783; Ig-like_fold.
+DR   InterPro; IPR003599; Ig_sub.
+DR   InterPro; IPR013106; Ig_V-set.
+DR   InterPro; IPR050150; IgV_Light_Chain.
+DR   PANTHER; PTHR23267; IMMUNOGLOBULIN LIGHT CHAIN; 1.
+DR   Pfam; PF07686; V-set; 1.
+DR   SMART; SM00409; IG; 1.
+DR   SMART; SM00406; IGv; 1.
+DR   SUPFAM; SSF48726; Immunoglobulin; 1.
+DR   PROSITE; PS50835; IG_LIKE; 1.
+DR   PDBsum; 2AEP; -.
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,json
+[?2004l[?2004h> for acc in ['P84751','P84750']:
+[?2004l[?2004h>  d=json.load(urllib.request.urlopen(f'https://rest.uniprot.org/uniprotkb/{acc}.json',timeout=30))
+[?2004l[?2004h>  print('\n',acc)
+[?2004l[?2004h>  print('names',d.get('proteinDescription'))
+[?2004l[?2004h>  print('sequence',d.get('sequence',{}).get('value'))
+[?2004l[?2004h>  print('comments')
+[?2004l[?2004h>  for c in d.get('comments',[]): print(c)
+[?2004l[?2004h>  print('refs')
+[?2004l[?2004h>  for r in d.get('references',[]): print(r.get('citation',{}).get('title'),r.get('citation',{}).get('publicationDate'))
+[?2004l[?2004h> PY
+[?2004l
+ P84751
+names {'recommendedName': {'fullName': {'value': 'Ig heavy chain Mem5'}}, 'flag': 'Fragment'}
+sequence EVKLVESGGGLVQPGGSLSLSCATSGFTFIDYYMSWFRQPPGKALEWLGLIRNKGNGYTMEYSASLKGRFTISRDNSQSIVYLHMNTLTAEDSATYYCARVDYGTNYDYWGQGTTLTVSSAKTTAPSVYPLAPVCGDTTGSSVTLGCLVKGYFPEPVTLTWNSGSLSSGVHTFPAVLQSDLYTLSSSVTVTSSTWPSQSITCNVAHPASSTKVDKKIEPRGPTIKPCPPCKCPAPNS
+comments
+{'texts': [{'evidences': [{'evidenceCode': 'ECO:0000269', 'source': 'PubMed', 'id': '12414967'}], 'value': 'Anti-influenza H3N2 neuraminidase antibody'}], 'commentType': 'FUNCTION'}
+{'commentType': 'SUBCELLULAR LOCATION', 'subcellularLocations': [{'location': {'value': 'Secreted', 'id': 'SL-0243'}}]}
+refs
+Antibody epitopes on the neuraminidase of a recent H3N2 influenza virus (A/Memphis/31/98). 2002
+
+ P84750
+names {'recommendedName': {'fullName': {'value': 'Ig kappa chain V region Mem5'}}, 'flag': 'Fragment'}
+sequence DILMTQSQKFLSTSVGDRVSVTCKASQNVGTNVAWYQKKPGQSPKPLMYSASYRYSGVPDRFTGSGSGTDFTLTISNVQSEDLAEYFCQQFNRYPLTFGSGTKLELKRADAAPTVSIFPPS
+comments
+{'texts': [{'evidences': [{'evidenceCode': 'ECO:0000269', 'source': 'PubMed', 'id': '12414967'}], 'value': 'Anti-influenza H3N2 neuraminidase antibody'}], 'commentType': 'FUNCTION'}
+{'commentType': 'SUBCELLULAR LOCATION', 'subcellularLocations': [{'location': {'value': 'Secreted', 'id': 'SL-0243'}}]}
+refs
+Antibody epitopes on the neuraminidase of a recent H3N2 influenza virus (A/Memphis/31/98). 2002
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request
+[?2004l[?2004h> for pid in ['1ZAN','2AEP','2ADF','2G2R','2G5B','3BKC','3BKJ','3BKM','4HDI']:
+[?2004l[?2004h>  try:
+[?2004l[?2004h>   d=json.load(urllib.request.urlopen('https://data.rcsb.org/rest/v1/core/entry/'+pid,timeout=30))
+[?2004l[?2004h>   print('\n###',pid,d.get('struct',{}).get('title'))
+[?2004l[?2004h>   for e in d.get('rcsb_entry_container_identifiers',{}).get('polymer_entity_ids',[]):
+[?2004l[?2004h>    x=json.load(urllib.request.urlopen(f'https://data.rcsb.org/rest/v1/core/polymer_entity/{pid}/{e}',timeout=30))
+[?2004l[?2004h>    s=x.get('entity_poly',{}).get('pdbx_seq_one_letter_code_can','').replace('\n','').replace(' ','')
+[?2004l[?2004h>    print(e,x.get('rcsb_polymer_entity',{}).get('pdbx_description'),'LEN',len(s),'SEQ',s[:120])
+[?2004l[?2004h>  except Exception as ex: print(pid,'ERROR',ex)
+[?2004l[?2004h> PY
+[?2004l
+### 1ZAN Crystal structure of anti-NGF AD11 Fab
+1 Fab AD11 Light Chain LEN 214 SEQ DIQMTQSPASLSASLGETVTIECRASEDIYNALAWYQQKPGKSPQLLIYNTDTLHTGVPSRFSGSGSGTQYSLKINSLQSEDVASYFCQHYFGYPRTFGGGTKLELKRADAAPTVSIFPP
+2 Fab AD11 Heavy Chain LEN 224 SEQ QVQLKESGPGLVQPSQTLSLTCTVSGFSLTNNNVNWVRQATGRGLEWMGGVWAGGATDYNSALKSRLTITRDTSKSQVFLKMHSLQSEDTATYYCARDGGYSSSTLYAMDAWGQGTTVTV
+
+### 2AEP An epidemiologically significant epitope of a 1998 influenza virus neuraminidase forms a highly hydrated interface in the NA-antibody complex.
+1 neuraminidase LEN 395 SEQ KEICPKLAEYRNWSKPQCKITGFAPFSKDNSIRLSAGGDIWVTREPYVSCDPDKCYQFALGQGTTLNNRHSNDTVHDRTPYRTLLMNELGVPFHLGTKQVCIAWSSSSCHDGKAWLHVCV
+2 FAB heavy chain LEN 217 SEQ EVKLVESGGGLVQPGGSLSLSCATSGFTFIDYYMSWFRQPPGKALEWLGLIRNKGNGYTMEYSASLKGRFTISRDNSQSIVYLHMNTLTAEDSATYYCARVDYGTNYDYWGQGTTLTVSS
+3 FAB light chain LEN 214 SEQ DILMTQSQKFLSTSVGDRVSVTCKASQNVGTNVAWYQKKPGQSPKPLMYSASYRYSGVPDRFTGSGSGTDFTLTISNVQSEDLAEYFCQQFNRYPLTFGSGTKLELKRADAAPTVSIFPP
+
+### 2ADF Crystal Structure and Paratope Determination of 82D6A3, an Antithrombotic Antibody Directed Against the von Willebrand factor A3-Domain
+1 Von Willebrand factor LEN 196 SEQ GSHMAPDCSQPLDVILLLDGSSSFPASYFDEMKSFAKAFISKANIGPRLTQVSVLQYGSITTIDVPWNVVPEKAHLLSLVDVMQREGGPSQIGDALGFAVRYLTSEMHGARPGASKAVVI
+2 82D6A3 IgG LEN 218 SEQ QIQLVQSGPELKKPGETVKISCKASGYTFINYGMNWVKQAPGKGLKWMGWKNTNTGETTYGEEFRGRFAFSLETSVSTAYLQINNLKNEDTATYFCARDNPYYALDYWGQGTTVTVSSAK
+3 82D6A3 IgG LEN 209 SEQ DIQMTQSPSSLSASLGGKVTITCKASQDINKYIAWYQHKPGKGPRLLIHYTSTLQPGIPSRFSGSGSGRDYSFSISNLEPEDIATYYCLQYDNLRTFGGGTKLEIKRADAAPTVSIFPPS
+
+### 2G2R Green-fluorescent antibody 11G10 in complex with its hapten (nitro-stilbene derivative)
+1 Green-fluorescent antibody (11G10)-light chain LEN 219 SEQ DVVMTQTPLTLSVTIGQPASISCRSSQSLLYINGKTHLNWLLQRPGQSPKRLIYLVSKLDSGVPDRFSGSGSGTDFTLKISRVEAEDLGIYFCLQSTHFPLTFGAGTKLELKRADAAPTV
+2 Green-fluorescent antibody (11G10)-heavy chain LEN 219 SEQ QVQLQQSGPVLVKPGTSLKMSCKASGYTFTAYYMNWMKQSHGKRLEWIAVINPYNGFTTYNQKFKGKATLTVDKSSNTAYMDLNSLTSEDSAVYYCVPYDYAADRVYWGHGTLVTVSTAK
+
+### 2G5B Crystal Structure of the anti-Bax monoclonal antibody 6A7 and a Bax peptide.
+1 6A7 Fab Light Chain LEN 217 SEQ DIVMSQSPSSLAVSAGERVTMTCKSSQSLFNSKTRRNYLAWYQQKPGQSPKLLIYWASTRESGVPDRFTGSGSGTEFTLTISSVQAEDLAVYYCKQSYNLRTFGGGTKLEIKRADAAPTV
+2 6A7 Fab Heavy Chain LEN 222 SEQ EVNLVESGGGLVQPGGSLRLSCATSGFTFIDNYMSWVRQPPGKALEWLGFIRNKVNGYTTEYGPSVKGRFTISRDDSQSILYLQMNTLRTEDSATYYCVRDNGSDYRWYFDVWGAGTTVT
+3 Bax Peptide LEN 7 SEQ PTSSEQI
+
+### 3BKC Crystal structure of anti-amyloid beta FAB WO2 (P21, FormB)
+1 WO2 IgG2a Fab fragment Light Chain Kappa LEN 252 SEQ DQSPQAVSSGCLLKMKLPVRLLVLMFWIPGSSSDVLMTQTPLSLPVNLGEQASISCRSSQSIVHSNGHTYLEWYLQRPGQSPKLLIYQVSTRFSGVPDRFSGSGSGTDFTLRISRVEAED
+2 WO2 IgG2a Fab fragment Heavy Chain LEN 228 SEQ EVTLKESGPGLLKPSQTLSLTCSFSGFSIRTSKVGVSWIRQPSGKGLEWLAHIYWDDDKRYNPSLESRLTISKDTSRDMVFMKITSVDTADTATYYCARRGFYGRKYEVNHFDYWGQGTT
+
+### 3BKJ Crystal structure of Fab wo2 bound to the n terminal domain of amyloid beta peptide (1-16)
+1 WO2 IgG2a Fab fragment Light Chain Kappa LEN 252 SEQ DQSPQAVSSGCLLKMKLPVRLLVLMFWIPGSSSDVLMTQTPLSLPVNLGEQASISCRSSQSIVHSNGHTYLEWYLQRPGQSPKLLIYQVSTRFSGVPDRFSGSGSGTDFTLRISRVEAED
+2 WO2 IgG2a Fab fragment Heavy Chain LEN 224 SEQ VTLKESGPGLLKPSQTLSLTCSFSGFSIRTSKVGVSWIRQPSGKGLEWLAHIYWDDDKRYNPSLESRLTISKDTSRDMVFMKITSVDTADTATYYCARRGFYGRKYEVNHFDYWGQGTTL
+3 Amyloid Beta Peptide LEN 16 SEQ DAEFRHDSGYEVHHQK
+
+### 3BKM Structure of anti-amyloid-beta Fab WO2 (Form A, P212121)
+1 WO2 IgG2a Fab fragment Light Chain Kappa LEN 252 SEQ DQSPQAVSSGCLLKMKLPVRLLVLMFWIPGSSSDVLMTQTPLSLPVNLGEQASISCRSSQSIVHSNGHTYLEWYLQRPGQSPKLLIYQVSTRFSGVPDRFSGSGSGTDFTLRISRVEAED
+2 WO2 IgG2a Fab fragment Heavy Chain LEN 224 SEQ VTLKESGPGLLKPSQTLSLTCSFSGFSIRTSKVGVSWIRQPSGKGLEWLAHIYWDDDKRYNPSLESRLTISKDTSRDMVFMKITSVDTADTATYYCARRGFYGRKYEVNHFDYWGQGTTL
+
+### 4HDI Crystal Structure of 3E5 IgG3 FAB from mus musculus
+1 Kappa light chain variable region, Anti-colorectal carcinoma light chain LEN 219 SEQ DVVMTQTPLSLPVSLGDQASISCRSSQSLVHSNGNTYLHWYLQKPGQSPKLLIYKVANRFSGVPDRFSGSGSGTDFTLKISRVEAEDLGVYFCSQSTHVPWTFGGGTKLEIKRADAAPTV
+python3 - <<'PY'
+import urllib.request,urllib.parse,json
+for q in ['gene:NA AND organism_id:11320 AND strain:"Memphis/31/98"','protein_name:neuraminidase AND organism_id:11320']:
+ u='https://rest.uniprot.org/uniprotkb/search?'+urllib.parse.urlencode({'query':q,'format':'json','size':20})
+ try:
+  d=json.load(urllib.request.urlopen(u,timeout=30)); print('\nQUERY',q)
+  for x in d.get('results',[]): print(x.get('primaryAccession'),x.get('proteinDescription'),x.get('organism',{}).get('scientificName'),x.get('sequence',{}).get('length'))
+ except Exception as e: print('ERROR',e)
+PY
+2 Ig heavy chain V region RF, Ig gamma-3 chain C region LEN 220 SEQ DVKLVESGGGLVKLGGSLKLSCAASGFTFSNYFMSWVRQTPEKRLELVAVITSNGDNTYYPDTVKGRFTISRDNAQNTLYLQMSSLKSEDTALYYCARRDSSASLYFDYWGQGTTLTVSS
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.request,urllib.parse,json
+[?2004l[?2004h> for q in ['gene:NA AND organism_id:11320 AND strain:"Memphis/31/98"','protein_name:neuraminidase AND organism_id:11320']:
+[?2004l[?2004h>  u='https://rest.uniprot.org/uniprotkb/search?'+urllib.parse.urlencode({'query':q,'format':'json','size':20})
+[?2004l[?2004h>  try:
+[?2004l[?2004h>   d=json.load(urllib.request.urlopen(u,timeout=30)); print('\nQUERY',q)
+[?2004l[?2004h>   for x in d.get('results',[]): print(x.get('primaryAccession'),x.get('proteinDescription'),x.get('organism',{}).get('scientificName'),x.get('sequence',{}).get('length'))
+[?2004l[?2004h>  except Exception as e: print('ERROR',e)
+[?2004l[?2004h> PY
+[?2004l
+QUERY gene:NA AND organism_id:11320 AND strain:"Memphis/31/98"
+
+QUERY protein_name:neuraminidase AND organism_id:11320
+A0A1S7IWC0 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 449
+A0A2R4A659 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 471
+A0A343X8B3 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 469
+A0A343X8E9 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 449
+A0A386JCX8 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 470
+A0A3G1QXJ9 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 465
+A0A3G1RJJ1 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 470
+A0A3S7RP66 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 470
+A0A3S7RP83 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 470
+A0A3S8U182 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 469
+A0A646RLU5 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 466
+A0A6H1QYJ4 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 469
+A0A6M3BBA3 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 470
+A0A858RPN4 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 469
+A0A8A4VDZ5 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 465
+A0A8E4ZIP4 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 470
+A0A8K1VZ50 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 469
+A0A1S7IWC6 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 449
+A0A2P1ADI7 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 469
+A0A2R3WP81 {'recommendedName': {'fullName': {'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': 'Neuraminidase'}, 'ecNumbers': [{'evidences': [{'evidenceCode': 'ECO:0000256', 'source': 'HAMAP-Rule', 'id': 'MF_04071'}, {'evidenceCode': 'ECO:0000256', 'source': 'RuleBase', 'id': 'RU361252'}], 'value': '3.2.1.18'}]}} Influenza A virus 470
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import urllib.parse,urllib.request,json
+[?2004l[?2004h> sm='Nc3nc(OCc1ccccc1)c2nc[nH]c2n3'
+[?2004l[?2004h> u='https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/'+urllib.parse.quote(sm,safe='')+'/property/IUPACName,Title,CanonicalSMILES,IsomericSMILES/JSON'
+[?2004l[?2004h> try:
+[?2004l[?2004h>  d=json.load(urllib.request.urlopen(u,timeout=30)); print(json.dumps(d,indent=2))
+[?2004l[?2004h> except Exception as e: print('ERROR',e)
+[?2004l[?2004h> PY
+[?2004l{
+  "PropertyTable": {
+    "Properties": [
+      {
+        "CID": 4578,
+        "SMILES": "C1=CC=C(C=C1)COC2=NC(=NC3=C2NC=N3)N",
+        "ConnectivitySMILES": "C1=CC=C(C=C1)COC2=NC(=NC3=C2NC=N3)N",
+        "IUPACName": "6-phenylmethoxy-7H-purin-2-amine",
+        "Title": "6-(Phenylmethoxy)-9H-purin-2-amine"
+      }
+    ]
+  }
+}
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request
+[?2004l[?2004h> for pid in ['2AEP','5WJ2','2H5Q','3KZY']:
+[?2004l[?2004h>  d=json.load(urllib.request.urlopen(f'https://data.rcsb.org/rest/v1/core/entry/{pid}',timeout=30))
+[?2004l[?2004h>  print('\n',pid)
+[?2004l[?2004h>  for e in d.get('rcsb_entry_container_identifiers',{}).get('non_polymer_entity_ids',[]):
+[?2004l[?2004h>   x=json.load(urllib.request.urlopen(f'https://data.rcsb.org/rest/v1/core/nonpolymer_entity/{pid}/{e}',timeout=30))
+[?2004l[?2004h>   print('NONPOLY',e,x.get('pdbx_entity_nonpoly',{}))
+[?2004l[?2004h> PY
+[?2004l
+ 2AEP
+NONPOLY 5 {'comp_id': 'GLC', 'entity_id': '5', 'name': 'alpha-D-glucopyranose'}
+NONPOLY 6 {'comp_id': 'NAG', 'entity_id': '6', 'name': '2-acetamido-2-deoxy-beta-D-glucopyranose'}
+NONPOLY 7 {'comp_id': 'CA', 'entity_id': '7', 'name': 'CALCIUM ION'}
+NONPOLY 8 {'comp_id': 'SO4', 'entity_id': '8', 'name': 'SULFATE ION'}
+NONPOLY 9 {'comp_id': 'MAN', 'entity_id': '9', 'name': 'alpha-D-mannopyranose'}
+
+ 5WJ2
+
+ 2H5Q
+
+ 3KZY
+NONPOLY 2 {'comp_id': 'ZN', 'entity_id': '2', 'name': 'ZINC ION'}
+[?2004hroot@800fdd991a01:/app# python3 - <<'PY'
+[?2004l[?2004h> import json,urllib.request
+[?2004l[?2004h> for pid,e in [('2AEP','1'),('5WJ2','1'),('2H5Q','1'),('3KZY','1')]:
+[?2004l[?2004h>  x=json.load(urllib.request.urlopen(f'https://data.rcsb.org/rest/v1/core/polymer_entity/{pid}/{e}',timeout=30))
+[?2004l[?2004h>  s=x.get('entity_poly',{}).get('pdbx_seq_one_letter_code_can','').replace('\n','').replace(' ','')
+[?2004l[?2004h>  print(pid,'len',len(s),'seq',s)
+[?2004l[?2004h> PY
+[?2004l2AEP len 395 seq KEICPKLAEYRNWSKPQCKITGFAPFSKDNSIRLSAGGDIWVTREPYVSCDPDKCYQFALGQGTTLNNRHSNDTVHDRTPYRTLLMNELGVPFHLGTKQVCIAWSSSSCHDGKAWLHVCVTGHDENATASFIYDGRLVDSIGSWSKKILRTQESECVCINGTCTVVMTDGSASGRADTKILFIEEGKIVHISPLSGSAQHVEECSCYPRYPGVRCVCRDNWKGSNRPIVDINVKDYSIVSSYVCSGLVGDTPRKNDSSSSSHCLNPNNEEGGHGVKGWAFDDGNDVWMGRTISEKFRSGYETFKVIEGWSKPNSKLQINRQVIVDRGNRSGYSGIFSVEGKSCINRCFYVELIRGRKQETEVWWTSNSIVVFCGTSGTYGTGSWPDGADINLMPI
+5WJ2 len 258 seq MGSSHHHHHHSSGENLYFQGHMVSKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTFXVACFSRYPDHMKQHDFFKSAMPEGYVQERTISFKDDGTYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSHQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK
+2H5Q len 234 seq MVSKGEEDNMAIIKEFMRFKVHMEGSVNGHEFEIEGEGEGRPYEGTQTAKLKVTKGGPLPFAWDILSPQFXSKAYVKHPADIPDYLKLSFPEGFKWERVMNFEDGGVVTVTQDSSLQDGEFIYKVKLRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIKQRLKLKDGGHYDAEVKTTYKAKKPVQLPGAYNVNIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYK
+3KZY len 182 seq GPGSDKDCEMKRTTLDSPLGKLELSGCEQGLHEIIFLGKGTSAADAVEVPAPAAVLGGPEPLMQATAWLNAYFHQPEAIEEFPVPALHHPVFQQESFTRQVLWKLLKVVKFGEVISYSHLAALAGNPAATAAVKTALSGNPVPILIPCHRVVQGDLDVGGYEGGLAVKEWLLAHEGHRLGKR
+[?2004hroot@800fdd991a01:/app# 

@@ -117,8 +117,8 @@ VARIANTS = {
 }
 
 
-def call(prompt, key):
-    body = json.dumps({"model": MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0,
+def call(prompt, key, model):
+    body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0,
                        "usage": {"include": True}}).encode()
     req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", body,
                                  {"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
@@ -140,16 +140,16 @@ def parse(txt):
         return None
 
 
-def route(job, key):
+def route(job, key, model):
     variant, rep, task = job
     tmpl, cards, pick = VARIANTS[variant]
     try:
-        r = call(tmpl.format(descs=descs(cards), task=task_text(task)), key)
+        r = call(tmpl.format(descs=descs(cards), task=task_text(task)), key, model)
         txt = r["choices"][0]["message"]["content"]
         d = parse(txt)
         h = pick(d) if d else None
         u = r.get("usage") or {}
-        return {"variant": variant, "rep": rep, "task": task, "raw": d, "pick": h if h in HARNESSES else DEFAULT,
+        return {"variant": variant, "rep": rep, "task": task, "model": r.get("model"), "raw": d, "pick": h if h in HARNESSES else DEFAULT,
                 "valid": h in HARNESSES, "tokens": u.get("total_tokens", 0), "cost": u.get("cost") or 0.0}
     except Exception as e:
         return {"variant": variant, "rep": rep, "task": task, "raw": None, "pick": DEFAULT, "valid": False,
@@ -163,9 +163,10 @@ def cost_table():
             continue
         r = json.load(open(f))
         h = (r.get("agent_info") or {}).get("name")
+        model = ((r.get("agent_info") or {}).get("model_info") or {}).get("name")
         rew = ((r.get("verifier_result") or {}).get("rewards") or {}).get("reward")
         c = (r.get("agent_result") or {}).get("cost_usd")
-        if h in HARNESSES and rew is not None and c is not None:
+        if h in HARNESSES and model == outcomes.MODEL and rew is not None and c is not None:
             t[r["trial_name"].rsplit("__", 1)[0]][h].append(c)
     return t
 
@@ -174,8 +175,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--variants", nargs="+", default=list(VARIANTS), choices=list(VARIANTS))
+    ap.add_argument("--model", default=MODEL, help="OpenRouter model that does the routing")
     a = ap.parse_args()
     out = OUT if len(a.variants) == len(VARIANTS) else OUT.replace(".json", f"_{'_'.join(a.variants)}.json")
+    if a.model != MODEL:
+        out = out.replace(".json", f"_{a.model.split('/')[-1]}.json")
     key = os.environ["OPENROUTER_API_KEY"]
     O, C = outcomes.build(JOBS), cost_table()
     tasks = [t for t in TRAIN + HELD if all(O[t].get(h) for h in HARNESSES)]
@@ -184,11 +188,11 @@ def main():
 
     jobs = [(v, r, t) for v in a.variants for r in range(a.reps) for t in tasks]
     with ThreadPoolExecutor(8) as ex:
-        rows = list(ex.map(lambda j: route(j, key), jobs))
+        rows = list(ex.map(lambda j: route(j, key, a.model), jobs))
     json.dump(rows, open(out, "w"), indent=1)
 
     splits = {"train": [t for t in tasks if t in TRAIN], "held": [t for t in tasks if t in HELD], "all": tasks}
-    print(f"{len(tasks)} tasks ({len(splits['train'])} train / {len(splits['held'])} held-out), {a.reps} reps per variant\n")
+    print(f"router model {a.model}; {len(tasks)} tasks ({len(splits['train'])} train / {len(splits['held'])} held-out), {a.reps} reps per variant\n")
     print(f"{'strategy':22} {'train':>7} {'held':>7} {'all':>7} {'exec $':>8}  picks (t2/mini/pi)   invalid  route $")
 
     def line(name, picks, extra=""):

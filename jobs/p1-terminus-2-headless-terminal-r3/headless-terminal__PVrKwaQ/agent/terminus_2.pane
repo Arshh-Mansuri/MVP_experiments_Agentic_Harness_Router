@@ -1,0 +1,322 @@
+[?2004hroot@49740da534ed:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@49740da534ed:/app# clear
+[?2004l[H[J[3J[?2004hroot@49740da534ed:/app# pwd; printf '\n--- /app ---\n'; find /app -maxdepth 3 -type f -printf '%p\n' | sort; printf '\n--- python ---\n'; python3 --version; python3 -m pip --version
+[?2004l/app
+
+--- /app ---
+/app/base_terminal.py
+
+--- python ---
+Python 3.13.7
+printf '\n--- BaseTerminal references ---\n'; grep -RIn --exclude-dir=.git 'BaseTerminal\|HeadlessTerminal' /app /usr/local/lib/python* 2>/dev/null | head -200
+pip 25.2 from /usr/local/lib/python3.13/site-packages/pip (python 3.13)
+[?2004hroot@49740da534ed:/app# printf '\n--- BaseTerminal references ---\n'; grep -RIn --exclude-dir=.git 'BaseTerminal\|HeadlessTerminal' /app /usr/local/lib/python* 2>/dev/null | head -200
+[?2004l
+--- BaseTerminal references ---
+/app/base_terminal.py:4:class BaseTerminal(ABC):
+[?2004hroot@49740da534ed:/app# cat /app/base_terminal.py; printf '\n--- metadata ---\n'; ls -la /app
+[?2004lfrom abc import ABC, abstractmethod
+
+
+class BaseTerminal(ABC):
+    @abstractmethod
+    def send_keystrokes(self, keystrokes: str, wait_sec: float = 0.0) -> None:
+        """
+        Sends keystrokes to the terminal.
+
+        Args:
+            keystrokes: The keystrokes to send to the terminal.
+            wait_sec: The number of seconds to wait for the command to complete.
+        """
+        pass
+
+--- metadata ---
+total 12
+drwxr-xr-x 1 root root 4096 Oct 28  2025 .
+drwxr-xr-x 1 root root 4096 Oct  3 18:40 ..
+-rw-r--r-- 1 root root  401 Oct 27  2025 base_terminal.py
+[?2004hroot@49740da534ed:/app# cat > /app/headless_terminal.py <<'PY'
+[?2004l[?2004h> """PTY-backed interactive terminal implementation."""
+[?2004los.WNOHANG)
+                    if pid:
+              [?2004h> 
+[?2004l[?2004h> from __future__ import annotations
+[?2004l[?2004h> 
+[?2004l[?2004h> import errno
+[?2004l[?2004h> import fcntl
+[?2004l[?2004h> import os
+[?2004l[?2004h> import pty
+[?2004l[?2004h> import select
+[?2004l[?2004h> import signal
+[?2004l[?2004h> import struct
+[?2004l[?2004h> import subprocess
+[?2004l[?2004h> import termios
+[?2004l[?2004h> import threading
+[?2004l[?2004h> import time
+[?2004l[?2004h> from typing import Optional
+[?2004l[?2004h> 
+[?2004l[?2004h> from base_terminal import BaseTerminal
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> class HeadlessTerminal(BaseTerminal):
+[?2004l[?2004h>     """A small headless terminal backed by an interactive bash process.
+[?2004l[?2004h> 
+[?2004l[?2004h>     Input is sent exactly as terminal bytes, so newline, escape sequences, and
+[?2004l[?2004h>     control characters (for example ``\x03``) work as they do in a real PTY.
+[?2004l[?2004h>     Output is retained in :attr:`output`; :meth:`read_output` returns output
+[?2004l[?2004h>     not previously consumed by that method, while :meth:`get_screen` returns a
+[?2004lckingIOError, OSError):
+                return[?2004h>     simple current-screen representation.
+[?2004l[?2004h>     """
+[?2004l[?2004h> 
+[?2004l[?2004h>     def __init__(
+[?2004l[?2004h>         self,
+[?2004l[?2004h>         *,
+[?2004l[?2004h>         shell: str = "/bin/bash",
+[?2004l[?2004h>         cols: int = 120,
+[?2004l: str, wait_sec: float = [?2004h>         rows: int = 40,
+[?2004l[?2004h>         env: Optional[dict[str, str]] = None,
+[?2004l            [?2004h>     ) -> None:
+[?2004lraise TypeError[?2004h>         if cols <= 0 or rows <= 0:
+[?2004l")
+      [?2004h>             raise ValueError("terminal dimensions must be positive")
+[?2004lec must not be[?2004h>         self.cols = cols
+[?2004lative")
+        if se[?2004h>         self.rows = rows
+[?2004l[?2004h>         self._lock = threading.RLock()
+[?2004l[?2004h>         self._closed = False
+[?2004l[?2004h>         self._output = ""
+[?2004l[?2004h>         self._read_position = 0
+[?2004l[?2004h>         self._screen = ""
+[?2004l[?2004h>         self._reader_done = threading.Event()
+[?2004l[?2004h> 
+[?2004l[?2004h>         child_env = os.environ.copy()
+[?2004l    written = os.write(self._fd, view)
+           [?2004h>         child_env.setdefault("TERM", "xterm-256color")
+[?2004l[?2004h>         child_env["COLUMNS"] = str(cols)
+[?2004l  [?2004h>         child_env["LINES"] = str(rows)
+[?2004l     except OSError as exc:
+           [?2004h>         if env:
+[?2004lf exc.errn[?2004h>             child_env.update(env)
+[?2004l[?2004h> 
+[?2004l [?2004h>         pid, fd = pty.fork()
+[?2004l[?2004h>         if pid == 0:
+[?2004lrocess has exited[?2004h>             # pty.fork gives the child a controlling terminal.  Do not use
+[?2004l[?2004h>             # --noprofile/--norc: interactive bash should source startup files.
+[?2004l[?2004h>             os.execvpe(shell, [shell, "-i"], child_env)
+[?2004l[?2004h>             os._exit(127)  # pragma: no cover
+[?2004l[?2004h> 
+[?2004l[?2004h>         self.pid = pid
+[?2004l[?2004h>         self._fd = fd
+[?2004l[?2004h>         self._set_winsize(rows, cols)
+[?2004ll[?2004h>         flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+[?2004l[?2004h>         fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+[?2004l[?2004h>         self._reader = threading.Thread(
+[?2004l[?2004h>             target=self._read_loop, name="headless-terminal-reader", daemon=True
+[?2004l[?2004h>         )
+[?2004l[?2004h>         self._reader.start()
+[?2004l[?2004h> 
+[?2004l[?2004h>     def _set_winsize(self, rows: int, cols: int) -> None:
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             winsize = struct.pack("HHHH", rows, cols, 0, 0)
+[?2004l[?2004h>             fcntl.ioctl(self._fd, termios.TIOCSWINSZ, winsize)
+[?2004l[?2004h>         except OSError:
+[?2004l[?2004h>             pass
+[?2004lt (Ch[?2004h> 
+[?2004li[?2004h>     def _append_output(self, data: bytes) -> None:
+[?2004l[?2004h>         # PTYs normally return UTF-8, but preserve undecodable bytes rather
+[?2004l[?2004h>         # than failing the reader thread.
+[?2004l[?2004h>         text = data.decode("utf-8", errors="replace")
+[?2004le,[?2004h>         with self._lock:
+[?2004lck) ->[?2004h>             self._output += text
+[?2004l[?2004h>             self._screen = self._update_screen(self._screen, text)
+[?2004l[?2004h> 
+[?2004l[?2004h>     @staticmethod
+[?2004l[?2004h>     def _update_screen(screen: str, text: str) -> str:
+[?2004lp/hea[?2004h>         """Apply common terminal controls sufficiently for a useful screen."""
+[?2004l[?2004h>         combined = screen + text
+[?2004l[?2004h>         # Retain printable text and common cursor movement/newline behavior.
+[?2004l[?2004h>         # Raw output remains available in output, so no information is lost.
+[?2004l[?2004h>         result: list[str] = []
+[?2004l[?2004h>         line: list[str] = []
+[?2004l[?2004h>         for ch in combined:
+[?2004l[?2004h>             if ch == "\r":
+[?2004l[?2004h>                 line = []
+[?2004l[?2004h>             elif ch == "\n":
+[?2004l[?2004h>                 result.extend(line)
+[?2004l 0.15)[?2004h>                 result.append("\n")
+[?2004l[?2004h>                 line = []
+[?2004l()
+PY
+[?2004h>             elif ch == "\b":
+[?2004l[?2004h>                 if line:
+[?2004l[?2004h>                     line.pop()
+[?2004l[?2004h>             elif ch == "\t":
+[?2004l[?2004h>                 line.append("\t")
+[?2004l[?2004h>             elif ch >= " " or ch == "\x7f":
+[?2004l[?2004h>                 line.append(ch)
+[?2004l[?2004h>         result.extend(line)
+[?2004l[?2004h>         # Keep a bounded screen buffer; output itself is unbounded by design.
+[?2004l[?2004h>         return "".join(result)[-200000:]
+[?2004l[?2004h> 
+[?2004l[?2004h>     def _read_loop(self) -> None:
+[?2004l[?2004h>         while not self._closed:
+[?2004l[?2004h>             try:
+[?2004l[?2004h>                 readable, _, _ = select.select([self._fd], [], [], 0.1)
+[?2004l[?2004h>             except (OSError, ValueError):
+[?2004l[?2004h>                 break
+[?2004l[?2004h>             if not readable:
+[?2004l[?2004h>                 try:
+[?2004l[?2004h>                     pid, _ = os.waitpid(self.pid, os.WNOHANG)
+[?2004l[?2004h>                     if pid:
+[?2004l[?2004h>                         break
+[?2004l[?2004h>                 except ChildProcessError:
+[?2004l[?2004h>                     break
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             try:
+[?2004l[?2004h>                 data = os.read(self._fd, 65536)
+[?2004l[?2004h>             except BlockingIOError:
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             except OSError as exc:
+[?2004l[?2004h>                 if exc.errno not in (errno.EIO, errno.EBADF):
+[?2004l[?2004h>                     pass
+[?2004l[?2004h>                 break
+[?2004l[?2004h>             if not data:
+[?2004l[?2004h>                 break
+[?2004l[?2004h>             self._append_output(data)
+[?2004l[?2004h>         self._reader_done.set()
+[?2004l[?2004h> 
+[?2004l[?2004h>     def _drain(self) -> None:
+[?2004l[?2004h>         while True:
+[?2004l[?2004h>             try:
+[?2004l[?2004h>                 data = os.read(self._fd, 65536)
+[?2004l[?2004h>             except (BlockingIOError, OSError):
+[?2004l[?2004h>                 return
+[?2004l[?2004h>             if not data:
+[?2004l[?2004h>                 return
+[?2004l[?2004h>             self._append_output(data)
+[?2004l[?2004h> 
+[?2004l[?2004h>     def send_keystrokes(self, keystrokes: str, wait_sec: float = 0.0) -> None:
+[?2004l[?2004h>         if not isinstance(keystrokes, str):
+[?2004l[?2004h>             raise TypeError("keystrokes must be a str")
+[?2004l[?2004h>         if wait_sec < 0:
+[?2004l[?2004h>             raise ValueError("wait_sec must not be negative")
+[?2004l[?2004h>         if self._closed:
+[?2004l[?2004h>             raise RuntimeError("terminal is closed")
+[?2004l[?2004h>         data = keystrokes.encode("utf-8", errors="surrogatepass")
+[?2004l[?2004h>         view = memoryview(data)
+[?2004l[?2004h>         while view:
+[?2004l[?2004h>             try:
+[?2004l[?2004h>                 written = os.write(self._fd, view)
+[?2004l[?2004h>                 view = view[written:]
+[?2004l[?2004h>             except InterruptedError:
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             except OSError as exc:
+[?2004l[?2004h>                 if exc.errno == errno.EPIPE:
+[?2004l[?2004h>                     raise RuntimeError("terminal process has exited") from exc
+[?2004l[?2004h>                 raise
+[?2004l[?2004h>         if wait_sec:
+[?2004l[?2004h>             time.sleep(wait_sec)
+[?2004l[?2004h>         self._drain()
+[?2004l[?2004h> 
+[?2004l[?2004h>     @property
+[?2004l[?2004h>     def output(self) -> str:
+[?2004l[?2004h>         with self._lock:
+[?2004l[?2004h>             return self._output
+[?2004l[?2004h> 
+[?2004l[?2004h>     def read_output(self) -> str:
+[?2004l[?2004h>         with self._lock:
+[?2004l[?2004h>             value = self._output[self._read_position:]
+[?2004l[?2004h>             self._read_position = len(self._output)
+[?2004l[?2004h>             return value
+[?2004l[?2004h> 
+[?2004l[?2004h>     def get_screen(self) -> str:
+[?2004l[?2004h>         with self._lock:
+[?2004l[?2004h>             return self._screen
+[?2004l[?2004h> 
+[?2004l[?2004h>     def close(self) -> None:
+[?2004l[?2004h>         if self._closed:
+[?2004l[?2004h>             return
+[?2004l[?2004h>         self._closed = True
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             os.close(self._fd)
+[?2004l[?2004h>         except OSError:
+[?2004l[?2004h>             pass
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             os.kill(self.pid, signal.SIGHUP)
+[?2004l[?2004h>         except OSError:
+[?2004l[?2004h>             pass
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             os.waitpid(self.pid, 0)
+[?2004l[?2004h>         except (ChildProcessError, OSError):
+[?2004l[?2004h>             pass
+[?2004l[?2004h>         if self._reader.is_alive():
+[?2004l[?2004h>             self._reader.join(timeout=1.0)
+[?2004l[?2004h> 
+[?2004l[?2004h>     def __enter__(self) -> "HeadlessTerminal":
+[?2004l[?2004h>         return self
+[?2004l[?2004h> 
+[?2004l[?2004h>     def __exit__(self, exc_type, exc_value, traceback) -> None:
+[?2004l[?2004h>         self.close()
+[?2004l[?2004h> 
+[?2004l[?2004h>     def __del__(self) -> None:
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             self.close()
+[?2004l[?2004h>         except Exception:
+[?2004l[?2004h>             pass
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@49740da534ed:/app# python3 -m py_compile /app/headless_terminal.py
+[?2004l[?2004hroot@49740da534ed:/app# python3 - <<'PY'
+[?2004l[?2004h> import sys, time
+[?2004l[?2004h> sys.path.insert(0, '/app')
+[?2004l[?2004h> from headless_terminal import HeadlessTerminal
+[?2004l[?2004h> 
+[?2004l[?2004h> t = HeadlessTerminal()
+[?2004l[?2004h> time.sleep(0.15)
+[?2004l[?2004h> t.send_keystrokes("printf 'HELLO\\n'\n", 0.15)
+[?2004l[?2004h> print('HAS_HELLO=', 'HELLO' in t.output)
+[?2004l[?2004h> t.send_keystrokes("read -p 'Name: ' name; echo " + '$name' + "\n", 0.05)
+[?2004l[?2004h> t.send_keystrokes('Alice\n', 0.15)
+[?2004l[?2004h> print('HAS_ALICE=', 'Alice' in t.output)
+[?2004l[?2004h> t.send_keystrokes("sleep 5\n", 0.05)
+[?2004l[?2004h> t.send_keystrokes('\x03', 0.15)
+[?2004l[?2004h> print('HAS_INTERRUPT=', 'sleep 5' in t.output)
+[?2004l[?2004h> t.close()
+[?2004l[?2004h> PY
+[?2004lHAS_HELLO= True
+HAS_ALICE= True
+HAS_INTERRUPT= True
+[?2004hroot@49740da534ed:/app# python3 - <<'PY'
+[?2004l[?2004h> import os, sys, tempfile, time
+[?2004l[?2004h> sys.path.insert(0, '/app')
+[?2004l[?2004h> from headless_terminal import HeadlessTerminal
+[?2004l[?2004h> 
+[?2004l[?2004h> with tempfile.TemporaryDirectory() as home:
+[?2004l[?2004h>     with open(os.path.join(home, '.bashrc'), 'w') as f:
+[?2004l[?2004h>         f.write("export HEADLESS_STARTUP_OK=1\n")
+[?2004l[?2004h>     t = HeadlessTerminal(env={'HOME': home})
+[?2004l[?2004h>     t.send_keystrokes("printf 'startup=%s\\n' \"$HEADLESS_STARTUP_OK\"\n", 0.2)
+[?2004l[?2004h>     assert 'startup=1' in t.output, repr(t.output)
+[?2004l[?2004h>     t.send_keystrokes("python3 -q\n", 0.2)
+[?2004l[?2004h>     t.send_keystrokes("print('interactive-python')\n", 0.2)
+[?2004l[?2004h>     t.send_keystrokes("exit()\n", 0.2)
+[?2004l[?2004h>     assert 'interactive-python' in t.output, repr(t.output)
+[?2004l[?2004h>     t.close()
+[?2004l[?2004h> print('startup and interactive checks passed')
+[?2004l[?2004h> PY
+[?2004lstartup and interactive checks passed
+[?2004hroot@49740da534ed:/app# pgrep -af 'bash -i|headless-terminal-reader' || true
+[?2004lbash: pgrep: command not found
+[?2004hroot@49740da534ed:/app# cd /app && python3 - <<'PY'
+[?2004l[?2004h> from headless_terminal import HeadlessTerminal
+[?2004l[?2004h> with HeadlessTerminal() as terminal:
+[?2004l[?2004h>     terminal.send_keystrokes("echo IMPORT_OK\n", 0.15)
+[?2004l[?2004h>     assert "IMPORT_OK" in terminal.output
+[?2004l[?2004h> print("exact import and context-manager checks passed")
+[?2004l[?2004h> PY
+[?2004lexact import and context-manager checks passed
+[?2004hroot@49740da534ed:/app# wc -l /app/headless_terminal.py
+[?2004l219 /app/headless_terminal.py
+[?2004hroot@49740da534ed:/app# 

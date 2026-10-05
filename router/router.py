@@ -3,14 +3,15 @@
 Blind by design: the prompt contains only the task text and generic harness
 descriptions. No prior benchmark results are used anywhere in this file.
 """
-import argparse, collections, glob, itertools, json, os, subprocess, sys, time
+import argparse, collections, glob, itertools, json, os, re, subprocess, sys, time
 from typing import TypedDict, Optional
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, START, END
 
-TASK_ROOT = os.path.expanduser("~/.cache/harbor/tasks/packages/terminal-bench")
 LOG = os.path.join(os.path.dirname(__file__), "router_log.jsonl")
 MODEL = "openrouter/openai/gpt-5.6-luna"
+ROUTER_MODELS = {"luna": "openai/gpt-5.6-luna"}  # OpenRouter models for LLM routing with the hand-written cards
+PROFILE_ROUTERS = {"jev": "jev", "luna-profiles": "luna"}  # pick from Luna's frozen harness profiles (profile_router.py)
 HARNESSES = ["terminus-2", "mini-swe-agent", "pi"]
 FALLBACK = "mini-swe-agent"  # best fixed harness on the Qwen 89-task baseline; used when router output is invalid or tied
 
@@ -58,10 +59,11 @@ class S(TypedDict, total=False):
 
 
 def load_task(s: S) -> S:
-    p = glob.glob(f"{TASK_ROOT}/{s['task']}/*/instruction.md") or glob.glob(os.path.join(os.environ.get("TB_TASK_DIR", "/nonexistent"), s["task"], "instruction.md"))
-    if not p:
-        sys.exit(f"instruction.md not found for {s['task']}")
-    return {"task_text": open(p[0]).read().strip()[:3000]}
+    from profile_router import task_text
+    try:
+        return {"task_text": task_text(s["task"])}
+    except FileNotFoundError as e:
+        sys.exit(str(e))
 
 
 def classify(s: S) -> S:
@@ -74,17 +76,25 @@ def classify(s: S) -> S:
         if h not in HARNESSES:  # gate_router also knows opencode (from the Qwen study); this pipeline only runs the 3 above
             h = max(HARNESSES, key=lambda k: proba.get(k, 0.0))
         return {"raw": json.dumps(proba), "votes": {h: 1}, "classify_s": round(time.time() - t, 3)}
-    if s.get("router") == "luna":
+    if s.get("router") in PROFILE_ROUTERS:
+        from profile_router import pick as profile_pick
+        h, info = profile_pick(s["task_text"], PROFILE_ROUTERS[s["router"]])
+        return {"raw": json.dumps({"reason": info["reason"], "underlying_model": info["underlying_model"],
+                                   "profiles_sha256": info["profiles_sha256"]}),
+                "votes": {h: 1} if h else {}, "classify_s": info["seconds"],
+                "router_tokens": info["tokens"], "router_cost": info["cost"]}
+    if s.get("router") in ROUTER_MODELS:
         from langchain_openai import ChatOpenAI
-        llm = ChatOpenAI(model="openai/gpt-5.6-luna", base_url="https://openrouter.ai/api/v1",
+        llm = ChatOpenAI(model=ROUTER_MODELS[s["router"]], base_url="https://openrouter.ai/api/v1",
                          api_key=os.environ["OPENROUTER_API_KEY"], timeout=60, max_retries=2, extra_body={"usage": {"include": True}})
         descs = "\n".join(f"- {k}: {v}" for k, v in HARNESS_DESCRIPTIONS.items())
         t = time.time()
         out = llm.invoke(PROMPT.format(descs=descs, task=s["task_text"]) + " Reply with only the JSON.")
         u = out.usage_metadata or {}
         tu = (out.response_metadata or {}).get("token_usage", {})
+        m = re.search(r"\{.*\}", out.content or "", re.S)
         try:
-            h = json.loads(out.content.strip().strip("`").removeprefix("json").strip()).get("harness")
+            h = json.loads(m.group(0)).get("harness") if m else None
         except Exception:
             h = None
         v = {h: 1} if h in HARNESSES else {}
@@ -147,7 +157,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("tasks", nargs="+")
     ap.add_argument("--execute", action="store_true", help="actually run harbor with the chosen harness")
-    ap.add_argument("--router", default="gemma", choices=["gemma", "luna", "gate"])
+    ap.add_argument("--router", default="gemma", choices=["gemma", "gate", *ROUTER_MODELS, *PROFILE_ROUTERS])
     ap.add_argument("--force", default="", choices=["", "terminus-2", "mini-swe-agent", "pi"], help="skip routing, use this harness")
     ap.add_argument("--tag", default="r")
     ap.add_argument("--cwd", default=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))

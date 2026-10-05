@@ -1,0 +1,465 @@
+[?2004hroot@263ea7a4ea0c:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@263ea7a4ea0c:/app# clear
+[?2004l[H[J[3J[?2004hroot@263ea7a4ea0c:/app# printf '%s\n' '--- query ---'; cat /app/my-sql-query.sql; printf '%s\n' '--- schema ---'; sqlite3 /app/oewn.sqlite '.schema'; printf '%s\n' '--- indexes ---'; sqlite3 /app/oewn.sqlite "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE type IN ('index','table') ORDER BY type, name;"\n^C[?2004l[?2004h[?2004l
+[?2004hroot@263ea7a4ea0c:/app# cat /app/my-sql-query.sql
+[?2004lSELECT
+  w.wordid AS word_id,
+  w.word AS word,
+  total_synsets,
+  total_senses,
+  distinct_domains,
+  distinct_posids,
+  (SELECT s.synsetid FROM senses s 
+   WHERE s.wordid = w.wordid 
+   GROUP BY s.synsetid 
+   ORDER BY COUNT(*) DESC, s.synsetid ASC 
+   LIMIT 1) AS top_synsetid,
+  (SELECT COUNT(*) FROM senses s 
+   WHERE s.wordid = w.wordid 
+   AND s.synsetid = (SELECT s2.synsetid FROM senses s2 
+                     WHERE s2.wordid = w.wordid 
+                     GROUP BY s2.synsetid 
+                     ORDER BY COUNT(*) DESC, s2.synsetid ASC 
+                     LIMIT 1)) AS top_synset_sense_count
+FROM (
+  SELECT 
+    w.wordid,
+    w.word,
+    COUNT(DISTINCT s.synsetid) AS total_synsets,
+    COUNT(*) AS total_senses,
+    COUNT(DISTINCT syn.domainid) AS distinct_domains,
+    COUNT(DISTINCT syn.posid) AS distinct_posids
+  FROM words w
+  JOIN senses s ON w.wordid = s.wordid
+  JOIN synsets syn ON s.synsetid = syn.synsetid
+  GROUP BY w.wordid, w.word
+  HAVING total_synsets >= 2
+    AND distinct_domains >= 2 
+    AND total_senses >= 2
+) w
+ORDER BY
+  total_senses DESC,
+  total_synsets DESC,
+  distinct_domains DESC,
+  word_id ASC
+LIMIT 500;[?2004hroot@263ea7a4ea0c:/app# sqlite3 /app/oewn.sqlite '.schema'
+[?2004lCREATE TABLE `synsets` (
+`synsetid` INT NOT NULL,
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL,
+`domainid` INT NOT NULL,
+`definition` MEDIUMTEXT NOT NULL
+);
+CREATE TABLE `words` (
+`wordid` INT NOT NULL,
+`word` VARCHAR(80) NOT NULL
+);
+CREATE TABLE `casedwords` (
+`casedwordid` INT NOT NULL,
+`wordid` INT NOT NULL ,
+`casedword` VARCHAR(80) NOT NULL
+);
+CREATE TABLE `pronunciations` (
+`pronunciationid` INT NOT NULL,
+`pronunciation` VARCHAR(50) NOT NULL
+);
+CREATE TABLE `morphs` (
+`morphid` INT NOT NULL,
+`morph` VARCHAR(70) NOT NULL
+);
+CREATE TABLE `poses` (
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL,
+`pos` VARCHAR(20) NOT NULL
+);
+CREATE TABLE `relations` (
+`relationid` INT NOT NULL,
+`relation` VARCHAR(50) NOT NULL,
+`recurses` TINYINT(1) NOT NULL
+);
+CREATE TABLE `domains` (
+`domainid` INT NOT NULL,
+`domain` VARCHAR(32) NOT NULL,
+`domainname` VARCHAR(32) NOT NULL,
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL
+);
+CREATE TABLE `samples` (
+`sampleid` INT NOT NULL,
+`sample` MEDIUMTEXT NOT NULL,
+`source` MEDIUMTEXT NULL,
+`synsetid` INT NOT NULL,
+`luid` INT DEFAULT NULL,
+`wordid` INT DEFAULT NULL
+);
+CREATE TABLE `vframes` (
+`frameid` INT NOT NULL,
+`frame` VARCHAR(50) NOT NULL
+);
+CREATE TABLE `vtemplates` (
+`templateid` INT NOT NULL,
+`template` MEDIUMTEXT NOT NULL
+);
+CREATE TABLE `adjpositions` (
+`positionid` CHARACTER (1) CHECK( `positionid` IN ('a','p','ip') ) NOT NULL,
+`position` VARCHAR(24) NOT NULL
+);
+CREATE TABLE `lexes` (
+`luid` INT NOT NULL,
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL,
+`wordid` INT NOT NULL,
+`casedwordid` INT DEFAULT NULL
+);
+CREATE TABLE `senses` (
+`senseid` INT NOT NULL,
+`sensekey` VARCHAR(100) DEFAULT NULL,
+`synsetid` INT NOT NULL,
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`casedwordid` INT DEFAULT NULL,
+`lexid` INT NOT NULL,
+`sensenum` INT DEFAULT NULL,
+`tagcount` INT DEFAULT NULL
+);
+CREATE TABLE `lexes_morphs` (
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL,
+`morphid` INT NOT NULL
+);
+CREATE TABLE `lexes_pronunciations` (
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL,
+`pronunciationid` INT NOT NULL,
+`variety` VARCHAR(2) DEFAULT NULL
+);
+CREATE TABLE `senses_adjpositions` (
+`synsetid` INT NOT NULL,
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`positionid` CHARACTER (1) CHECK( `positionid` IN ('a','p','ip') ) NOT NULL
+);
+CREATE TABLE `lexrelations` (
+`synset1id` INT NOT NULL,
+`lu1id` INT NOT NULL,
+`word1id` INT NOT NULL,
+`synset2id` INT NOT NULL,
+`lu2id` INT NOT NULL,
+`word2id` INT NOT NULL,
+`relationid` INT NOT NULL
+);
+CREATE TABLE `senses_vframes` (
+`synsetid` INT NOT NULL,
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`frameid` INT NOT NULL
+);
+CREATE TABLE `senses_vtemplates` (
+`synsetid` INT NOT NULL,
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`templateid` INT NOT NULL
+);
+CREATE TABLE `semrelations` (
+`synset1id` INT NOT NULL,
+`synset2id` INT NOT NULL,
+`relationid` INT NOT NULL
+);
+CREATE TABLE `usages` (
+`usageid` INT NOT NULL,
+`usagenote` MEDIUMTEXT NOT NULL,
+`synsetid` INT NOT NULL,
+`luid` INT DEFAULT NULL,
+`wordid` INT DEFAULT NULL
+);
+CREATE TABLE `ilis` (
+`ili` VARCHAR(7) NOT NULL,
+`synsetid` INT NOT NULL
+);
+CREATE TABLE `wikidatas` (
+`wikidata` VARCHAR(12) NOT NULL,
+`synsetid` INT NOT NULL
+);
+[?2004hroot@263ea7a4ea0c:/app# sqlite3 /app/oewn.sqlite "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE type IN ('index','table') ORDER BY type, name;"
+[?2004ltable|adjpositions|adjpositions|CREATE TABLE `adjpositions` (
+`positionid` CHARACTER (1) CHECK( `positionid` IN ('a','p','ip') ) NOT NULL,
+`position` VARCHAR(24) NOT NULL
+)
+table|casedwords|casedwords|CREATE TABLE `casedwords` (
+`casedwordid` INT NOT NULL,
+`wordid` INT NOT NULL ,
+`casedword` VARCHAR(80) NOT NULL
+)
+table|domains|domains|CREATE TABLE `domains` (
+`domainid` INT NOT NULL,
+`domain` VARCHAR(32) NOT NULL,
+`domainname` VARCHAR(32) NOT NULL,
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL
+)
+table|ilis|ilis|CREATE TABLE `ilis` (
+`ili` VARCHAR(7) NOT NULL,
+`synsetid` INT NOT NULL
+)
+table|lexes|lexes|CREATE TABLE `lexes` (
+`luid` INT NOT NULL,
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL,
+`wordid` INT NOT NULL,
+`casedwordid` INT DEFAULT NULL
+)
+table|lexes_morphs|lexes_morphs|CREATE TABLE `lexes_morphs` (
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL,
+`morphid` INT NOT NULL
+)
+table|lexes_pronunciations|lexes_pronunciations|CREATE TABLE `lexes_pronunciations` (
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL,
+`pronunciationid` INT NOT NULL,
+`variety` VARCHAR(2) DEFAULT NULL
+)
+table|lexrelations|lexrelations|CREATE TABLE `lexrelations` (
+`synset1id` INT NOT NULL,
+`lu1id` INT NOT NULL,
+`word1id` INT NOT NULL,
+`synset2id` INT NOT NULL,
+`lu2id` INT NOT NULL,
+`word2id` INT NOT NULL,
+`relationid` INT NOT NULL
+)
+table|morphs|morphs|CREATE TABLE `morphs` (
+`morphid` INT NOT NULL,
+`morph` VARCHAR(70) NOT NULL
+)
+table|poses|poses|CREATE TABLE `poses` (
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL,
+`pos` VARCHAR(20) NOT NULL
+)
+table|pronunciations|pronunciations|CREATE TABLE `pronunciations` (
+`pronunciationid` INT NOT NULL,
+`pronunciation` VARCHAR(50) NOT NULL
+)
+table|relations|relations|CREATE TABLE `relations` (
+`relationid` INT NOT NULL,
+`relation` VARCHAR(50) NOT NULL,
+`recurses` TINYINT(1) NOT NULL
+)
+table|samples|samples|CREATE TABLE `samples` (
+`sampleid` INT NOT NULL,
+`sample` MEDIUMTEXT NOT NULL,
+`source` MEDIUMTEXT NULL,
+`synsetid` INT NOT NULL,
+`luid` INT DEFAULT NULL,
+`wordid` INT DEFAULT NULL
+)
+table|semrelations|semrelations|CREATE TABLE `semrelations` (
+`synset1id` INT NOT NULL,
+`synset2id` INT NOT NULL,
+`relationid` INT NOT NULL
+)
+table|senses|senses|CREATE TABLE `senses` (
+`senseid` INT NOT NULL,
+`sensekey` VARCHAR(100) DEFAULT NULL,
+`synsetid` INT NOT NULL,
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`casedwordid` INT DEFAULT NULL,
+`lexid` INT NOT NULL,
+`sensenum` INT DEFAULT NULL,
+`tagcount` INT DEFAULT NULL
+)
+table|senses_adjpositions|senses_adjpositions|CREATE TABLE `senses_adjpositions` (
+`synsetid` INT NOT NULL,
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`positionid` CHARACTER (1) CHECK( `positionid` IN ('a','p','ip') ) NOT NULL
+)
+table|senses_vframes|senses_vframes|CREATE TABLE `senses_vframes` (
+`synsetid` INT NOT NULL,
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`frameid` INT NOT NULL
+)
+table|senses_vtemplates|senses_vtemplates|CREATE TABLE `senses_vtemplates` (
+`synsetid` INT NOT NULL,
+`luid` INT NOT NULL,
+`wordid` INT NOT NULL,
+`templateid` INT NOT NULL
+)
+table|synsets|synsets|CREATE TABLE `synsets` (
+`synsetid` INT NOT NULL,
+`posid` CHARACTER (1) CHECK( `posid` IN ('n','v','a','r','s') ) NOT NULL,
+`domainid` INT NOT NULL,
+`definition` MEDIUMTEXT NOT NULL
+)
+table|usages|usages|CREATE TABLE `usages` (
+`usageid` INT NOT NULL,
+`usagenote` MEDIUMTEXT NOT NULL,
+`synsetid` INT NOT NULL,
+`luid` INT DEFAULT NULL,
+`wordid` INT DEFAULT NULL
+)
+table|vframes|vframes|CREATE TABLE `vframes` (
+`frameid` INT NOT NULL,
+`frame` VARCHAR(50) NOT NULL
+)
+table|vtemplates|vtemplates|CREATE TABLE `vtemplates` (
+`templateid` INT NOT NULL,
+`template` MEDIUMTEXT NOT NULL
+)
+table|wikidatas|wikidatas|CREATE TABLE `wikidatas` (
+`wikidata` VARCHAR(12) NOT NULL,
+`synsetid` INT NOT NULL
+)
+table|words|words|CREATE TABLE `words` (
+`wordid` INT NOT NULL,
+`word` VARCHAR(80) NOT NULL
+)
+[?2004hroot@263ea7a4ea0c:/app# sqlite3 /app/oewn.sqlite 'SELECT sqlite_version();'
+[?2004l3.45.1
+[?2004hroot@263ea7a4ea0c:/app# cat > /app/sol.sql <<'SQL'
+[?2004l[?2004h> WITH word_stats AS (
+[?2004l[?2004h>   SELECT
+[?2004l[?2004h>     s.wordid,
+[?2004l[?2004h>     COUNT(DISTINCT s.synsetid) AS total_synsets,
+[?2004l[?2004h>     COUNT(*) AS total_senses,
+[?2004l[?2004h>     COUNT(DISTINCT syn.domainid) AS distinct_domains,
+[?2004l[?2004h>     COUNT(DISTINCT syn.posid) AS distinct_posids
+[?2004l[?2004h>   FROM senses AS s
+[?2004l[?2004h>   JOIN synsets AS syn ON syn.synsetid = s.synsetid
+[?2004l[?2004h>   GROUP BY s.wordid
+[?2004l[?2004h>   HAVING total_synsets >= 2
+[?2004l[?2004h>      AND distinct_domains >= 2
+[?2004l[?2004h>      AND total_senses >= 2
+[?2004l[?2004h> ), synset_counts AS (
+[?2004l[?2004h>   SELECT wordid, synsetid, COUNT(*) AS sense_count
+[?2004l[?2004h>   FROM senses
+[?2004l[?2004h>   GROUP BY wordid, synsetid
+[?2004l[?2004h> ), ranked AS (
+[?2004l[?2004h>   SELECT
+[?2004l[?2004h>     wordid,
+[?2004l[?2004h>     synsetid,
+[?2004l[?2004h>     sense_count,
+[?2004l[?2004h>     ROW_NUMBER() OVER (
+[?2004l[?2004h>       PARTITION BY wordid
+[?2004l[?2004h>       ORDER BY sense_count DESC, synsetid ASC
+[?2004l[?2004h>     ) AS rn
+[?2004l[?2004h>   FROM synset_counts
+[?2004l[?2004h> )
+[?2004l[?2004h> SELECT
+[?2004l[?2004h>   w.wordid AS word_id,
+[?2004l[?2004h>   w.word AS word,
+[?2004l[?2004h>   ws.total_synsets,
+[?2004l[?2004h>   ws.total_senses,
+[?2004l[?2004h>   ws.distinct_domains,
+[?2004l[?2004h>   ws.distinct_posids,
+[?2004l[?2004h>   r.synsetid AS top_synsetid,
+[?2004l[?2004h>   r.sense_count AS top_synset_sense_count
+[?2004l[?2004h> FROM word_stats AS ws
+[?2004l[?2004h> JOIN words AS w ON w.wordid = ws.wordid
+[?2004l[?2004h> JOIN ranked AS r ON r.wordid = ws.wordid AND r.rn = 1
+[?2004l[?2004h> ORDER BY
+[?2004l[?2004h>   ws.total_senses DESC,
+[?2004l[?2004h>   ws.total_synsets DESC,
+[?2004l[?2004h>   ws.distinct_domains DESC,
+[?2004l[?2004h>   word_id ASC
+[?2004l[?2004h> LIMIT 500;
+[?2004l[?2004h> SQL
+[?2004l[?2004hroot@263ea7a4ea0c:/app# sqlite3 /app/oewn.sqlite < /app/my-sql-query.sql > /tmp/original.out
+[?2004lprintf '%s\n' '--- original plan ---'; sqlite3 /app/oewn.sqlite "EXPLAIN QUERY PLAN $(tr '\n' ' ' < /app/my-sql-query.sql)"; printf '%s\n' '--- optimized plan ---'; sqlite3 /app/oewn.sqlite "EXPLAIN QUERY PLAN $(tr '\n' ' ' < /app/sol.sql)"
+^CRuntime error near line 1: interrupted (9)
+Program interrupted.
+[?2004hroot@263ea7a4ea0c:/app# sqlite3 /app/oewn.sqlite < /app/sol.sql > /tmp/solution.out && printf 'solution_rows=' && wc -l < /tmp/solution.out && printf 'solution_first_rows:\n' && head -n 3 /tmp/solution.out
+[?2004lsolution_rows=500
+solution_first_rows:
+17710|break|75|75|16|2|483|1
+33833|cut|70|70|17|4|58|1
+117295|run|57|57|16|2|4046|1
+[?2004hroot@263ea7a4ea0c:/app# printf 'comments='; grep -Ec -- '--|/\*|\*/' /app/sol.sql || true; printf 'semicolons='; tr -cd ';' < /app/sol.sql | wc -c; printf 'statements='; sqlite3 /app/oewn.sqlite "EXPLAIN $(cat /app/sol.sql)" >/dev/null && echo 1
+[?2004lcomments=0
+semicolons=1
+statements=1
+[?2004hroot@263ea7a4ea0c:/app# printf '%s\n' '--- optimized plan ---'; sqlite3 /app/oewn.sqlite "EXPLAIN QUERY PLAN $(tr '\n' ' ' < /app/sol.sql)"
+[?2004l--- optimized plan ---
+QUERY PLAN
+|--CO-ROUTINE word_stats
+|  |--SCAN s
+|  |--BLOOM FILTER ON syn (synsetid=?)
+|  |--SEARCH syn USING AUTOMATIC COVERING INDEX (synsetid=?)
+|  |--USE TEMP B-TREE FOR GROUP BY
+|  |--USE TEMP B-TREE FOR count(DISTINCT)
+|  |--USE TEMP B-TREE FOR count(DISTINCT)
+|  `--USE TEMP B-TREE FOR count(DISTINCT)
+|--MATERIALIZE ranked
+|  |--CO-ROUTINE (subquery-5)
+|  |  |--CO-ROUTINE synset_counts
+|  |  |  |--SCAN senses
+|  |  |  `--USE TEMP B-TREE FOR GROUP BY
+|  |  |--SCAN synset_counts
+|  |  `--USE TEMP B-TREE FOR ORDER BY
+|  `--SCAN (subquery-5)
+|--SCAN r
+|--BLOOM FILTER ON ws (wordid=?)
+|--SEARCH ws USING AUTOMATIC COVERING INDEX (wordid=?)
+|--BLOOM FILTER ON w (wordid=?)
+|--SEARCH w USING AUTOMATIC COVERING INDEX (wordid=?)
+`--USE TEMP B-TREE FOR ORDER BY
+[?2004hroot@263ea7a4ea0c:/app# timeout 60 sqlite3 /app/oewn.sqlite < /app/my-sql-query.sql > /tmp/original.out; status=$?; echo original_status=$status; if [ "$status" = 0 ]; then diff -u /tmp/original.out /tmp/solution.out; echo diff_status=$?; fi
+[?2004loriginal_status=124
+[?2004hroot@263ea7a4ea0c:/app# cat > /app/sol.sql <<'SQL'
+[?2004l[?2004h> WITH synset_counts AS (
+[?2004l[?2004h>   SELECT wordid, synsetid, COUNT(*) AS sense_count
+[?2004l[?2004h>   FROM senses
+[?2004l[?2004h>   GROUP BY wordid, synsetid
+[?2004l[?2004h> ), word_stats AS (
+[?2004l[?2004h>   SELECT
+[?2004l[?2004h>     c.wordid,
+[?2004l[?2004h>     COUNT(*) AS total_synsets,
+[?2004l[?2004h>     SUM(c.sense_count) AS total_senses,
+[?2004l[?2004h>     COUNT(DISTINCT syn.domainid) AS distinct_domains,
+[?2004l[?2004h>     COUNT(DISTINCT syn.posid) AS distinct_posids
+[?2004l[?2004h>   FROM synset_counts AS c
+[?2004l[?2004h>   JOIN synsets AS syn ON syn.synsetid = c.synsetid
+[?2004l[?2004h>   GROUP BY c.wordid
+[?2004l[?2004h>   HAVING total_synsets >= 2
+[?2004l[?2004h>      AND distinct_domains >= 2
+[?2004l[?2004h>      AND total_senses >= 2
+[?2004l[?2004h> ), ranked AS (
+[?2004l[?2004h>   SELECT
+[?2004l[?2004h>     wordid,
+[?2004l[?2004h>     synsetid,
+[?2004l[?2004h>     sense_count,
+[?2004l[?2004h>     ROW_NUMBER() OVER (
+[?2004l[?2004h>       PARTITION BY wordid
+[?2004l[?2004h>       ORDER BY sense_count DESC, synsetid ASC
+[?2004l[?2004h>     ) AS rn
+[?2004l[?2004h>   FROM synset_counts
+[?2004l[?2004h> )
+[?2004l[?2004h> SELECT
+[?2004l[?2004h>   w.wordid AS word_id,
+[?2004l[?2004h>   w.word AS word,
+[?2004l[?2004h>   ws.total_synsets,
+[?2004l[?2004h>   ws.total_senses,
+[?2004l[?2004h>   ws.distinct_domains,
+[?2004l[?2004h>   ws.distinct_posids,
+[?2004l[?2004h>   r.synsetid AS top_synsetid,
+[?2004l[?2004h>   r.sense_count AS top_synset_sense_count
+[?2004l[?2004h> FROM word_stats AS ws
+[?2004l[?2004h> JOIN words AS w ON w.wordid = ws.wordid
+[?2004l[?2004h> JOIN ranked AS r ON r.wordid = ws.wordid AND r.rn = 1
+[?2004l[?2004h> ORDER BY
+[?2004l[?2004h>   ws.total_senses DESC,
+[?2004l[?2004h>   ws.total_synsets DESC,
+[?2004l[?2004h>   ws.distinct_domains DESC,
+[?2004l[?2004h>   word_id ASC
+[?2004l[?2004h> LIMIT 500;
+[?2004l[?2004h> SQL
+[?2004l[?2004hroot@263ea7a4ea0c:/app# sqlite3 /app/oewn.sqlite < /app/sol.sql > /tmp/solution2.out && printf 'rows=' && wc -l < /tmp/solution2.out && cmp -s /tmp/solution.out /tmp/solution2.out && echo output_unchanged=yes
+[?2004lrows=500
+output_unchanged=yes
+[?2004hroot@263ea7a4ea0c:/app# printf 'comments='; grep -Ec -- '--|/\*|\*/' /app/sol.sql || true; printf 'semicolons='; tr -cd ';' < /app/sol.sql | wc -c; sqlite3 /app/oewn.sqlite "EXPLAIN $(cat /app/sol.sql)" >/dev/null && echo valid_sql=yes
+[?2004lcomments=0
+semicolons=1
+valid_sql=yes
+[?2004hroot@263ea7a4ea0c:/app# 

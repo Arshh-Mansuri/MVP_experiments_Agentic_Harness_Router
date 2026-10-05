@@ -1,0 +1,206 @@
+[?2004hroot@dbce875ab560:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@dbce875ab560:/app# clear
+[?2004l[H[J[3J[?2004hroot@dbce875ab560:/app# pwd; ls -la; python3 - <<'PY'
+[?2004l[?2004h> try:
+[?2004l[?2004h>  import bs4
+[?2004l[?2004h>  print('bs4 available', bs4.__version__)
+[?2004l[?2004h> except Exception as e:
+[?2004l[?2004h>  print('bs4 unavailable:', e)
+[?2004l[?2004h> try:
+[?2004l[?2004h>  import lxml
+[?2004l[?2004h>  print('lxml available', lxml.__version__)
+[?2004l[?2004h> except Exception as e:
+[?2004l[?2004h>  print('lxml unavailable:', e)
+[?2004l[?2004h> try:
+[?2004l[?2004h>  import bleach
+[?2004l[?2004h>  print('bleach available', bleach.__version__)
+[?2004l[?2004h> except Exception as e:
+[?2004l[?2004h>  print('bleach unavailable:', e)
+[?2004l[?2004h> PY
+[?2004l/app
+total 8
+drwxr-xr-x 2 root root 4096 Sep 13  2025 .
+drwxr-xr-x 1 root root 4096 Oct  3 14:04 ..
+bs4 available 4.13.4
+lxml unavailable: No module named 'lxml'
+bleach unavailable: No module named 'bleach'
+[?2004hroot@dbce875ab560:/app# cat > /app/filter.py <<'PY'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """Remove executable JavaScript from an HTML file while preserving formatting."""
+[?2004l[?2004h> import html
+[?2004l[?2004h> import os
+[?2004l[?2004h> import re
+[?2004l[?2004h> import sys
+[?2004l[?2004h> import tempfile
+[?2004l[?2004h> import urllib.parse
+[?2004l[?2004h> 
+[?2004l[?2004h> SCRIPT_OPEN_RE = re.compile(r"<\s*script(?:\s|/?>)", re.I)
+[?2004l[?2004h> SCRIPT_CLOSE_RE = re.compile(r"<\s*/\s*script\s*>", re.I)
+[?2004l[?2004h> TAG_NAME_RE = re.compile(r"<\s*([A-Za-z][A-Za-z0-9:_-]*)")
+[?2004l[?2004h> ATTR_RE = re.compile(
+[?2004l[?2004h>     r"(?P<lead>\s+)(?P<name>[A-Za-z_:][A-Za-z0-9:._-]*)"
+[?2004l[?2004h>     r"(?:\s*=\s*(?P<value>\"[^\"]*\"|'[^']*'|[^\s>]*))?",
+[?2004l[?2004h>     re.S,
+[?2004l[?2004h> )
+[?2004l[?2004h> 
+[?2004l[?2004h> # Attributes whose values can directly execute or load script.
+[?2004l[?2004h> URL_ATTRS = {
+[?2004l[?2004h>     "href", "src", "action", " formaction", "cite", "background",
+[?2004l[?2004h>     "codebase", "data", "lowsrc", "dynsrc", "poster", "ping",
+[?2004l[?2004h>     "xlink:href",
+[?2004l[?2004h> }
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def decoded_value(value):
+[?2004l[?2004h>     if value is None:
+[?2004l[?2004h>         return ""
+[?2004lavascript:alert[?2004h>     if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+[?2004l[?2004h>         value = value[1:-1]
+[?2004l[?2004h>     # Decode repeatedly because entities and percent escapes can be layered.
+[?2004l[?2004h>     for _ in range(3):
+[?2004l[?2004h>         new = html.unescape(urllib.parse.unquote(value))
+[?2004l[?2004h>         if new == value:
+[?2004l[?2004h>             break
+[?2004l[?2004h>         value = new
+[?2004l[?2004h>     return value.replace("\x00", "").strip().lower()
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def dangerous_value(name, value):
+[?2004l[?2004h>     v = decoded_value(value)
+[?2004l[?2004h>     compact = re.sub(r"[\x00-\x20\u007f]+", "", v)
+[?2004l[?2004h>     if name in URL_ATTRS or name == "srcdoc":
+[?2004l[?2004h>         return compact.startswith("javascript:") or compact.startswith("vbscript:") or compact.startswith("data:text/html") or name == "srcdoc"
+[?2004l[?2004h>     if name == "style":
+[?2004l[?2004h>         return bool(re.search(r"(?:expression\s*\(|url\s*\(\s*['\"]?\s*(?:javascript|vbscript):|behavior\s*:|-moz-binding\s*:)", v, re.I))
+[?2004l[?2004h>     if name == "content":
+[?2004l[?2004h>         return bool(re.search(r"(?:^|;)\s*url\s*\(\s*['\"]?\s*(?:javascript|vbscript):", v, re.I))
+[?2004l[?2004h>     return False
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def sanitize_tag(tag):
+[?2004l[?2004h>     """Return a tag with only dangerous attributes removed."""
+[?2004l[?2004h>     m = TAG_NAME_RE.match(tag)
+[?2004l[?2004h>     if not m:
+[?2004l[?2004h>         return tag
+[?2004l[?2004h>     tag_name = m.group(1).lower()
+[?2004l[?2004h>     if tag_name in {"script"}:
+[?2004l[?2004h>         return ""
+[?2004l[?2004h> 
+[?2004l[?2004h>     def replace_attr(match):
+[?2004l[?2004h>         name = match.group("name")
+[?2004l[?2004h>         low = name.lower()
+[?2004l[?2004h>         value = match.group("value")
+[?2004l[?2004h>         # HTML event handler attributes (onclick, onload, onerror, ...).
+[?2004l[?2004h>         if low.startswith("on") and len(low) > 2:
+[?2004l[?2004h>             return ""
+[?2004l[?2004h>         if low in URL_ATTRS or low in {"srcdoc", "style", "content"}:
+[?2004l[?2004h>             if dangerous_value(low, value):
+[?2004l[?2004h>                 return ""
+[?2004l[?2004h>         return match.group(0)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Do not parse the tag's closing /> as an attribute; ATTR_RE only starts
+[?2004l[?2004h>     # after whitespace and requires an attribute-name character.
+[?2004l[?2004h>     return ATTR_RE.sub(replace_attr, tag)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def sanitize(text):
+[?2004l[?2004h>     out = []
+[?2004l[?2004h>     pos = 0
+[?2004l[?2004h>     n = len(text)
+[?2004l[?2004h>     while pos < n:
+[?2004l[?2004h>         start = text.find("<", pos)
+[?2004l[?2004h>         if start < 0:
+[?2004l[?2004h>             out.append(text[pos:])
+[?2004l[?2004h>             break
+[?2004l[?2004h>         out.append(text[pos:start])
+[?2004l[?2004h> 
+[?2004l[?2004h>         # Remove script element and all of its contents, including malformed
+[?2004l[?2004h>         # content up to EOF if no closing tag exists.
+[?2004l[?2004h>         if SCRIPT_OPEN_RE.match(text, start):
+[?2004l[?2004h>             close = SCRIPT_CLOSE_RE.search(text, start)
+[?2004l[?2004h>             pos = n if close is None else close.end()
+[?2004l[?2004h>             continue
+[?2004l[?2004h> 
+[?2004l[?2004h>         # Find the end of a tag without being confused by > inside quotes.
+[?2004l[?2004h>         i = start + 1
+[?2004l[?2004h>         quote = None
+[?2004l[?2004h>         while i < n:
+[?2004l[?2004h>             c = text[i]
+[?2004l[?2004h>             if quote:
+[?2004l[?2004h>                 if c == quote:
+[?2004l[?2004h>                     quote = None
+[?2004l[?2004h>             elif c in "\"'":
+[?2004l[?2004h>                 quote = c
+[?2004l[?2004h>             elif c == ">":
+[?2004l[?2004h>                 i += 1
+[?2004l[?2004h>                 break
+[?2004l[?2004h>             i += 1
+[?2004l[?2004h>         if i > n:
+[?2004l[?2004h>             i = n
+[?2004l[?2004h>         tag = text[start:i]
+[?2004l[?2004h>         out.append(sanitize_tag(tag))
+[?2004l[?2004h>         pos = i
+[?2004l[?2004h>     return "".join(out)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     if len(sys.argv) != 2:
+[?2004l[?2004h>         print(f"usage: {sys.argv[0]} HTML_FILE", file=sys.stderr)
+[?2004l[?2004h>         return 2
+[?2004l[?2004h>     path = sys.argv[1]
+[?2004l[?2004h>     with open(path, "rb") as f:
+[?2004l[?2004h>         raw = f.read()
+[?2004l[?2004h>     # UTF-8 is standard for HTML; surrogateescape preserves undecodable bytes.
+[?2004l[?2004h>     text = raw.decode("utf-8", "surrogateescape")
+[?2004l[?2004h>     filtered = sanitize(text)
+[?2004l[?2004h>     encoded = filtered.encode("utf-8", "surrogateescape")
+[?2004l[?2004h>     directory = os.path.dirname(os.path.abspath(path)) or "."
+[?2004l[?2004h>     fd, temporary = tempfile.mkstemp(prefix=".filter-", dir=directory)
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         with os.fdopen(fd, "wb") as f:
+[?2004l[?2004h>             f.write(encoded)
+[?2004l[?2004h>             f.flush()
+[?2004l[?2004h>             os.fsync(f.fileno())
+[?2004l[?2004h>         os.replace(temporary, path)
+[?2004l[?2004h>     except Exception:
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             os.unlink(temporary)
+[?2004l[?2004h>         except OSError:
+[?2004l[?2004h>             pass
+[?2004l[?2004h>         raise
+[?2004l[?2004h>     return 0
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     raise SystemExit(main())
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@dbce875ab560:/app# chmod 755 /app/filter.py
+[?2004l[?2004hroot@dbce875ab560:/app# python3 -m py_compile /app/filter.py
+[?2004l[?2004hroot@dbce875ab560:/app# cat > /tmp/filter-test.html <<'EOF'
+[?2004l[?2004h> <!doctype html>\n<html><head><style>body { color: red }</style><script>alert(1)</script></head>\n<body class="x" onclick="bad()"><a href="javascript:alert(1)" title="ok">Link</a><img src="x" onerror='bad()'>\n<table><tr><td>safe</td></tr></table></body></html>\nEOF
+[?2004l[?2004h> python3 /app/filter.py /tmp/filter-test.html
+[?2004l[?2004h> cat /tmp/filter-test.html
+[?2004l[?2004h> ^C[?2004l[?2004h[?2004l
+[?2004hroot@dbce875ab560:/app# sed -i 's/" formaction"/"formaction"/' /app/filter.py
+[?2004l[?2004hroot@dbce875ab560:/app# python3 -m py_compile /app/filter.py
+[?2004l[?2004hroot@dbce875ab560:/app# cat > /tmp/filter-test.html <<'EOF'
+[?2004l[?2004h> <!doctype html>
+[?2004l[?2004h> <html><head><style>body { color: red }</style><script>alert(1)</script></head>
+[?2004l[?2004h> <body class="x" onclick="bad()"><a href="javascript:alert(1)" title="ok">Link</a><img src="x" onerror='bad()'>
+[?2004l[?2004h> <table><tr><td>safe</td></tr></table></body></html>
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@dbce875ab560:/app# python3 /app/filter.py /tmp/filter-test.html
+[?2004l[?2004hroot@dbce875ab560:/app# printf '%s\n' '--- filtered output ---'
+[?2004l--- filtered output ---
+[?2004hroot@dbce875ab560:/app# cat /tmp/filter-test.html
+[?2004l<!doctype html>
+<html><head><style>body { color: red }</style></head>
+<body class="x"><a title="ok">Link</a><img src="x">
+<table><tr><td>safe</td></tr></table></body></html>
+[?2004hroot@dbce875ab560:/app# printf '%s\n' '--- remaining dangerous patterns ---'
+[?2004l--- remaining dangerous patterns ---
+[?2004hroot@dbce875ab560:/app# if grep -Ein '(<script|javascript:|\son[a-z]+\s*=)' /tmp/filter-test.html; then exit 1; else echo none; fi
+[?2004lnone
+[?2004hroot@dbce875ab560:/app# 

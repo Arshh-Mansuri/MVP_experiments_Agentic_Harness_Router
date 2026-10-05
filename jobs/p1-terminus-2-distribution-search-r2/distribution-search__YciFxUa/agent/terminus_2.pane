@@ -1,0 +1,232 @@
+[?2004hroot@d4fd1e3a0f40:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@d4fd1e3a0f40:/app# clear
+[?2004l[H[J[3J[?2004hroot@d4fd1e3a0f40:/app# cat > /app/solve.py <<'PY'
+[?2004lraise RuntimeError(f"root solve failed: {sol.message}; x={sol.x}; metrics={metrics(sol.x)}")
+
+a, t = map(float, sol.x)
+low_p = np.exp(t) / N
+mid_mass = 1.0 - a - L * low_p
+mid_p = mid_mass / M
+
+p = np.empty(N, dtype=np.float64)
+p[0] = a
+p[1:1 + L] = low_p
+p[1 + L:] = mid_p
+
+# Renormalize only for floating-point roundoff, then validate.
+p /= p.sum()
+u = 1.0 / N
+forward = np.sum(p * np.log(p / u))
+backward = np.sum(u * np.log(u / p))
+
+print("solver success:", sol.success)
+print("a:", repr(a))
+print("t:", repr(t))
+print("min probability:", p.min())
+print("sum:", repr(p.sum()))
+print("forward KL:", repr(forward))
+print("backward KL:", repr(backward))
+
+if not np.isfinite(p).all() or np.any(p <= 0) or not np.isclose(p.sum(), 1.0, atol=1e-12):
+    raise RuntimeError("invalid probability distribution")
+if abs(forward - TARGET) > 0.001 or abs(backward - TARGET) > 0.001:
+    raise RuntimeError("KL divergence tolerance not met")
+
+np.save("/app/dist.npy", p)
+print("saved /app/dist.npy", p.shape, p.dtype)
+PY
+python3 /app/solve.py
+python3 - <<'PY'
+import numpy as np
+p = np.load('/app/dist.npy')
+print('file exists, shape=', p.shape, 'sum=', repr(p.sum()), 'min=', p.min(), 'max=', p.max())
+PY
+[?2004h> import numpy as np
+[?2004l[?2004h> from scipy.optimize import root
+[?2004l[?2004h> 
+[?2004l[?2004h> N = 150_000
+[?2004l[?2004h> H = 1
+[?2004l[?2004h> L = 1_500
+[?2004l[?2004h> M = N - H - L
+[?2004l[?2004h> TARGET = 10.0
+[?2004l[?2004h> LOGN = np.log(float(N))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Variables are a = mass of the single high token and t = log(N*p_low).
+[?2004l[?2004h> # The low group has L identical probabilities p_low = exp(t)/N.
+[?2004l[?2004h> def metrics(x):
+[?2004l[?2004h>     a, t = float(x[0]), float(x[1])
+[?2004l[?2004h>     low_p = np.exp(t) / N
+[?2004l[?2004h>     low_mass = L * low_p
+[?2004l[?2004h>     mid_mass = 1.0 - a - low_mass
+[?2004l[?2004h>     if a <= 0.0 or mid_mass <= 0.0:
+[?2004l[?2004h>         return np.array([1e3, 1e3])
+[?2004l[?2004h>     mid_p = mid_mass / M
+[?2004l[?2004h>     high_r = N * a
+[?2004l[?2004h>     mid_r = N * mid_p
+[?2004l[?2004h> 
+[?2004l[?2004h>     forward = a * np.log(high_r) + low_mass * t + mid_mass * np.log(mid_r)
+[?2004l[?2004h>     backward = -(np.log(high_r) + L * t + M * np.log(mid_r)) / N
+[?2004l[?2004h>     return np.array([forward, backward])
+[?2004l[?2004h> 
+[?2004l[?2004h> def equations(x):
+[?2004l[?2004h>     return metrics(x) - TARGET
+[?2004l[?2004h> 
+[?2004l[?2004h> # A low group occupying 1% of the vocabulary provides enough backward KL,
+[?2004l[?2004h> # while the high token controls the forward KL.
+[?2004l[?2004h> sol = root(equations, np.array([0.86, -750.0]), method="hybr", tol=1e-11)
+[?2004l[?2004h> if not sol.success:
+[?2004l[?2004h>     raise RuntimeError(f"root solve failed: {sol.message}; x={sol.x}; metrics={metrics(sol.x)}")
+[?2004l[?2004h> 
+[?2004l[?2004h> a, t = map(float, sol.x)
+[?2004l[?2004h> low_p = np.exp(t) / N
+[?2004l[?2004h> mid_mass = 1.0 - a - L * low_p
+[?2004l[?2004h> mid_p = mid_mass / M
+[?2004l[?2004h> 
+[?2004l[?2004h> p = np.empty(N, dtype=np.float64)
+[?2004l[?2004h> p[0] = a
+[?2004l[?2004h> p[1:1 + L] = low_p
+[?2004l[?2004h> p[1 + L:] = mid_p
+[?2004l[?2004h> 
+[?2004l[?2004h> # Renormalize only for floating-point roundoff, then validate.
+[?2004l[?2004h> p /= p.sum()
+[?2004l[?2004h> u = 1.0 / N
+[?2004l[?2004h> forward = np.sum(p * np.log(p / u))
+[?2004l[?2004h> backward = np.sum(u * np.log(u / p))
+[?2004l[?2004h> 
+[?2004l[?2004h> print("solver success:", sol.success)
+[?2004l[?2004h> print("a:", repr(a))
+[?2004l[?2004h> print("t:", repr(t))
+[?2004l[?2004h> print("min probability:", p.min())
+[?2004l[?2004h> print("sum:", repr(p.sum()))
+[?2004l[?2004h> print("forward KL:", repr(forward))
+[?2004l[?2004h> print("backward KL:", repr(backward))
+[?2004l[?2004h> 
+[?2004l[?2004h> if not np.isfinite(p).all() or np.any(p <= 0) or not np.isclose(p.sum(), 1.0, atol=1e-12):
+[?2004l[?2004h>     raise RuntimeError("invalid probability distribution")
+[?2004l[?2004h> if abs(forward - TARGET) > 0.001 or abs(backward - TARGET) > 0.001:
+[?2004l[?2004h>     raise RuntimeError("KL divergence tolerance not met")
+[?2004l[?2004h> 
+[?2004l[?2004h> np.save("/app/dist.npy", p)
+[?2004l[?2004h> print("saved /app/dist.npy", p.shape, p.dtype)
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@d4fd1e3a0f40:/app# python3 /app/solve.py
+[?2004l/app/solve.py:50: RuntimeWarning: divide by zero encountered in log
+  forward = np.sum(p * np.log(p / u))
+/app/solve.py:50: RuntimeWarning: invalid value encountered in multiply
+  forward = np.sum(p * np.log(p / u))
+/app/solve.py:51: RuntimeWarning: divide by zero encountered in divide
+  backward = np.sum(u * np.log(u / p))
+solver success: True
+a: 0.8711639614562099
+t: -798.1326074935212
+min probability: 0.0
+sum: np.float64(1.0000000000000002)
+forward KL: np.float64(nan)
+backward KL: np.float64(inf)
+Traceback (most recent call last):
+  File [35m"/app/solve.py"[0m, line [35m62[0m, in [35m<module>[0m
+    raise RuntimeError("invalid probability distribution")
+[1;35mRuntimeError[0m: [35minvalid probability distribution[0m
+[?2004hroot@d4fd1e3a0f40:/app# python3 - <<'PY'
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> p = np.load('/app/dist.npy')
+[?2004l[?2004h> print('file exists, shape=', p.shape, 'sum=', repr(p.sum()), 'min=', p.min(), 'max=', p.max())
+[?2004l[?2004h> PY
+[?2004lTraceback (most recent call last):
+  File [35m"<stdin>"[0m, line [35m2[0m, in [35m<module>[0m
+  File [35m"/usr/local/lib/python3.13/site-packages/numpy/lib/_npyio_impl.py"[0m, line [35m459[0m, in [35mload[0m
+    fid = stack.enter_context([31mopen[0m[1;31m(os.fspath(file), "rb")[0m)
+                              [31m~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mFileNotFoundError[0m: [35m[Errno 2] No such file or directory: '/app/dist.npy'[0m
+[?2004hroot@d4fd1e3a0f40:/app# cat > /app/solve.py <<'PY'
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> from scipy.optimize import root
+[?2004l[?2004h> 
+[?2004l[?2004h> N = 150000
+[?2004l[?2004h> L = 75000
+[?2004l[?2004h> M = N - L - 1
+[?2004l[?2004h> TARGET = 10.0
+[?2004l[?2004h> 
+[?2004l[?2004h> def calc(x):
+[?2004l[?2004h>     a, t = float(x[0]), float(x[1])
+[?2004l[?2004h>     low_r = np.exp(t)
+[?2004l[?2004h>     low_p = low_r / N
+[?2004l[?2004h>     low_mass = L * low_p
+[?2004l[?2004h>     mid_mass = 1.0 - a - low_mass
+[?2004l[?2004h>     if a <= 0 or mid_mass <= 0 or not np.isfinite(low_r):
+[?2004l[?2004h>         return np.array([1e6, 1e6])
+[?2004l[?2004h>     mid_p = mid_mass / M
+[?2004l[?2004h>     high_r = N * a
+[?2004l[?2004h>     mid_r = N * mid_p
+[?2004l[?2004h>     forward = a * np.log(high_r) + low_mass * t + mid_mass * np.log(mid_r)
+[?2004l[?2004h>     backward = -(np.log(high_r) + L * t + M * np.log(mid_r)) / N
+[?2004l[?2004h>     return np.array([forward, backward])
+[?2004l[?2004h> 
+[?2004l[?2004h> def equations(x):
+[?2004l[?2004h>     return calc(x) - TARGET
+[?2004l[?2004h> 
+[?2004l[?2004h> sol = root(equations, np.array([0.87, -40.0]), method="hybr", tol=1e-11)
+[?2004l[?2004h> if not sol.success or np.max(np.abs(equations(sol.x))) > 1e-8:
+[?2004l[?2004h>     raise RuntimeError(f"solve failed: {sol.message}, x={sol.x}, values={calc(sol.x)}")
+[?2004l[?2004h> 
+[?2004l[?2004h> a, t = map(float, sol.x)
+[?2004l[?2004h> low_p = np.exp(t) / N
+[?2004l[?2004h> mid_mass = 1.0 - a - L * low_p
+[?2004l[?2004h> mid_p = mid_mass / M
+[?2004l[?2004h> 
+[?2004l[?2004h> p = np.empty(N, dtype=np.float64)
+[?2004l[?2004h> p[0] = a
+[?2004l[?2004h> p[1:L+1] = low_p
+[?2004l[?2004h> p[L+1:] = mid_p
+[?2004l[?2004h> p /= p.sum()
+[?2004l[?2004h> 
+[?2004l[?2004h> u = 1.0 / N
+[?2004l[?2004h> forward = np.sum(p * np.log(p / u))
+[?2004l[?2004h> backward = np.sum(u * np.log(u / p))
+[?2004l[?2004h> 
+[?2004l[?2004h> print("solver:", sol.success)
+[?2004l[?2004h> print("a:", repr(a), "t:", repr(t))
+[?2004l[?2004h> print("low probability:", repr(low_p))
+[?2004l[?2004h> print("middle probability:", repr(mid_p))
+[?2004l[?2004h> print("shape:", p.shape, "dtype:", p.dtype)
+[?2004l[?2004h> print("sum:", repr(p.sum()), "min:", repr(p.min()), "max:", repr(p.max()))
+[?2004l[?2004h> print("forward KL:", repr(forward))
+[?2004l[?2004h> print("backward KL:", repr(backward))
+[?2004l[?2004h> 
+[?2004l[?2004h> if not np.isfinite(p).all() or np.any(p <= 0):
+[?2004l[?2004h>     raise RuntimeError("distribution contains invalid probabilities")
+[?2004l[?2004h> if abs(p.sum() - 1.0) > 1e-12:
+[?2004l[?2004h>     raise RuntimeError("distribution is not normalized")
+[?2004l[?2004h> if abs(forward - TARGET) > 0.001 or abs(backward - TARGET) > 0.001:
+[?2004l[?2004h>     raise RuntimeError("KL tolerance not met")
+[?2004l[?2004h> 
+[?2004l[?2004h> np.save("/app/dist.npy", p)
+[?2004l[?2004h> print("saved /app/dist.npy")
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@d4fd1e3a0f40:/app# python3 /app/solve.py
+[?2004lsolver: True
+a: 0.8644493804914477 t: -18.69492472626329
+low probability: np.float64(5.067643935416879e-14)
+middle probability: np.float64(1.807365640979471e-06)
+shape: (150000,) dtype: float64
+sum: np.float64(0.9999999999999999) min: np.float64(5.0676439354168856e-14) max: np.float64(0.8644493804914488)
+forward KL: np.float64(10.00000000000002)
+backward KL: np.float64(10.0)
+saved /app/dist.npy
+[?2004hroot@d4fd1e3a0f40:/app# python3 - <<'PY'
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> p = np.load('/app/dist.npy')
+[?2004l[?2004h> N = len(p)
+[?2004l[?2004h> u = 1.0 / N
+[?2004l[?2004h> print('loaded:', p.shape, p.dtype)
+[?2004l[?2004h> print('sum:', repr(p.sum()))
+[?2004l[?2004h> print('forward:', repr(np.sum(p*np.log(p/u))))
+[?2004l[?2004h> print('backward:', repr(np.sum(u*np.log(u/p))))
+[?2004l[?2004h> PY
+[?2004lloaded: (150000,) float64
+sum: np.float64(0.9999999999999999)
+forward: np.float64(10.00000000000002)
+backward: np.float64(10.0)
+[?2004hroot@d4fd1e3a0f40:/app# 

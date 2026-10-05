@@ -1,0 +1,372 @@
+{
+ "model": "openai/gpt-5.6-luna",
+ "created": "2026-10-03T20:58:14",
+ "frozen": true,
+ "versions": {
+  "terminus-2": "2.0.0 (Harbor built-in)",
+  "mini-swe-agent": "2.4.6",
+  "pi": "0.85.1"
+ },
+ "source_hashes": {
+  "harbor/agents/terminus_2/terminus_2.py": "c6b72b8c6289809b",
+  "harbor/agents/terminus_2/tmux_session.py": "38642b794c335880",
+  "harbor/agents/terminus_2/templates/terminus-json-plain.txt": "89a3dc3a15752b74",
+  "harbor/agents/terminus_2/templates/timeout.txt": "32bf9aa7b157a6a0",
+  "harbor/agents/installed/mini_swe_agent.py": "6458398cc58f2d44",
+  "mswea/mini_swe_agent-2.4.6.dist-info/METADATA": "70969b3842773841",
+  "mswea/minisweagent/config/mini.yaml": "b539a8965f5bf41d",
+  "mswea/minisweagent/agents/default.py": "e8ef8aa365942d73",
+  "mswea/minisweagent/environments/local.py": "01dd33ae6be89745",
+  "mswea/minisweagent/run/mini.py": "ae9c82013afbc8e0",
+  "harbor/agents/installed/pi.py": "17304778a023e2f2",
+  "pi/package/README.md": "a63ba45d9c16ad63",
+  "pi/package/dist/core/system-prompt.js": "4a57f022a27f2ae2",
+  "pi/package/dist/core/tools/bash.js": "5f5bc414757f2b48",
+  "pi/package/dist/core/tools/read.js": "c3d1fa1994c44541",
+  "pi/package/dist/core/tools/edit.js": "ed04b10ad4583427",
+  "pi/package/dist/core/tools/write.js": "86bdd1c8a7cd7d4f",
+  "pi/package/dist/core/tools/grep.js": "641ae520a88c7eb8",
+  "pi/package/dist/core/tools/find.js": "cbb5e3a76e962899",
+  "pi/package/dist/core/tools/ls.js": "8e06f1a42e48fcf4",
+  "pi/package/docs/compaction.md": "b6aff7cab195cd78",
+  "pi/package/docs/usage.md": "588896ba21944ff0"
+ },
+ "calls": [
+  {
+   "step": "research terminus-2",
+   "model": "openai/gpt-5.6-luna",
+   "prompt_tokens": 24639,
+   "completion_tokens": 2175,
+   "cost": 0.0087696
+  },
+  {
+   "step": "research mini-swe-agent",
+   "model": "openai/gpt-5.6-luna",
+   "prompt_tokens": 15455,
+   "completion_tokens": 1999,
+   "cost": 0.0062624
+  },
+  {
+   "step": "research pi",
+   "model": "openai/gpt-5.6-luna",
+   "prompt_tokens": 31658,
+   "completion_tokens": 2083,
+   "cost": 0.01041395
+  },
+  {
+   "step": "compare",
+   "model": "openai/gpt-5.6-luna",
+   "prompt_tokens": 5462,
+   "completion_tokens": 4180,
+   "cost": 0.00638135
+  }
+ ],
+ "cost_usd": 0.0318,
+ "drafts": {
+  "terminus-2": {
+   "summary": "Terminus-2 is a language-model-driven terminal agent that asks the model for JSON or XML containing shell-command keystrokes, sends those keystrokes to a persistent tmux-backed bash session, and feeds terminal output back to the model. It can record the terminal with asciinema, maintain ATIF-style trajectories, and compact conversation context through a three-subagent summarization process.",
+   "interaction_model": "At setup, it creates a persistent TmuxSession running `bash --login` in a named tmux session. For each model response, the selected parser extracts command objects; `_execute_commands` sends each command's `keystrokes` through tmux and waits for its requested duration. Shell state, working directory, processes, and interactive programs persist between steps because all commands use the same tmux pane. The harness does not execute each command with `subprocess.run`; environment commands are used to invoke `tmux send-keys`, capture the pane, and perform supporting operations.",
+   "tools": [
+    "bash_command: The model emits a JSON/XML command object containing literal `keystrokes` and a duration; the harness sends those keystrokes to the persistent tmux shell.",
+    "mark_task_complete: The model sets `task_complete` in its parsed response; the harness asks for confirmation and only finishes when the model marks completion on the following turn as well.",
+    "terminal observation: After a command batch, the harness captures tmux pane history and returns either new terminal output or the current visible screen.",
+    "context summarization: When enabled, the harness can invoke three additional LLM calls to summarize prior work, ask missing-information questions, and answer them before continuing."
+   ],
+   "interactive_programs": "Yes. The model controls a real persistent tmux pane using literal keystrokes, including tmux-style keys such as `C-c` and `C-d`, so it can interact with REPLs, password/input prompts, editors, and TUIs. Commands are normally sent with `block=False`; the harness waits only for the requested minimum duration, so the model generally must poll or send further keystrokes to determine progress. Long literal input can be delivered through a tmux paste buffer.",
+   "long_running_processes": "The model can start foreground or background processes in the persistent shell and continue using them later, including servers launched with shell backgrounding such as `&`. Each parsed command duration is capped at 60 seconds in `_handle_llm_interaction`. `_execute_commands` sends commands non-blockingly with `min_timeout_sec`, so the duration is a wait rather than a reliable process-kill timeout. The TmuxSession has a separate blocking mode with `timeout <max_timeout_sec>s tmux wait done`, but Terminus-2's command execution path does not use that mode. A timeout observation can nevertheless be produced if `send_keys` raises `TimeoutError`.",
+   "file_editing": "Files can be created and edited by sending shell commands, heredocs, editor keystrokes, or other terminal input. Normal commands use `tmux send-keys`, with batching constrained to roughly 16,000 bytes. If a literal key payload is too large, `_paste_key` base64-encodes it, writes it into `/tmp` through chunked `environment.exec` calls, then uses `tmux load-buffer` and `paste-buffer`; this supports substantially larger heredocs or file contents. Multi-file changes are possible through ordinary shell commands, scripts, `sed`, `python`, editors, or repeated commands, but the model must manually construct and verify them.",
+   "observation": "The harness captures tmux output with `tmux capture-pane -p`; initial and subsequent observations use `capture_entire=True` to inspect pane history, while fallback/current-screen views use the visible pane. `get_incremental_output` compares the current captured buffer with the previous buffer and returns either `New Terminal Output` or `Current Terminal Screen`; if it cannot reliably find new content, it falls back to the current screen. Every terminal observation is limited to 10,000 UTF-8 bytes by `_limit_output_length`, preserving approximately the first and last halves and inserting an omission marker. The initial prompt includes the current terminal state, and command batches share one resulting observation.",
+   "context_and_limits": "The default maximum is 1,000,000 episodes, although `max_turns` or deprecated episode parameters can reduce it. The model must return valid parser-format output; parse errors are sent back as corrective feedback and no commands from that malformed response are executed. JSON is the default parser, with XML also supported. Command durations are capped at 60 seconds. Context summarization is enabled by default and proactively starts when estimated free context falls below 8,000 tokens; on context overflow it unwinds recent message pairs, then attempts full three-call summarization, a short summary, and finally a terminal-screen-only fallback. Summarization can reset or split chat/trajectory history and adds separate subagent LLM usage. Output-length failures may salvage XML, otherwise the harness asks the model to retry in smaller chunks. It tracks input, output, cached tokens, cost, API request times, episode count, and optional rollout details. Runs stop when the session dies, the completion confirmation succeeds, or the episode limit/error path ends execution. Setup may spend up to 240 seconds attempting to install tmux/asciinema, with individual installation commands capped at 120 seconds.",
+   "images_and_documents": "There is no explicit image, PDF, or binary-document inspection tool or multimodal interface in this harness. The model can use terminal utilities to inspect text representations, metadata, OCR output, or convert files if such utilities exist in the environment, but the harness itself only returns terminal text.",
+   "strengths": [
+    "Provides a persistent interactive Linux shell rather than isolated command subprocesses, preserving cwd, environment, shell state, REPLs, and background processes.",
+    "Uses tmux keystrokes, so it can drive interactive prompts, editors, full-screen terminal programs, and control-key sequences.",
+    "Supports command batching, per-command wait durations, pane-history capture, and incremental-output detection.",
+    "Handles large literal file writes with a base64/chunked paste-buffer fallback when tmux's command-size limit is exceeded.",
+    "Automatically installs or builds tmux and optionally asciinema, and can save terminal recordings and detailed trajectories.",
+    "Has robust parser/error handling and a two-step completion confirmation to reduce premature task termination.",
+    "Can compact long conversations with a summary/questions/answers handoff while retaining terminal state."
+   ],
+   "weaknesses": [
+    "The model must encode all actions as valid JSON or XML text; malformed responses cause a correction turn rather than direct tool execution.",
+    "Command execution is non-blocking in the main loop, so short or inaccurate durations can cause observations to arrive before a command finishes; the model must poll explicitly.",
+    "Terminal observations are capped at 10,000 bytes and incremental-output detection can fall back to only the visible screen, potentially hiding output.",
+    "The model receives text terminal output only; there is no native visual understanding of images, GUIs, or binary documents.",
+    "Context summarization consumes additional LLM calls and can lose detail despite its three-stage design; rollout details are noted as incomplete when summarization occurs.",
+    "Foreground commands that do not finish within the chosen duration are not automatically terminated by the normal execution path.",
+    "tmux/asciinema installation may require package-manager or internet access and can consume substantial setup time; recording is best-effort.",
+    "Trajectory and context bookkeeping is complex, and raw versus parsed trajectory modes change whether tool calls and structured analysis are retained."
+   ],
+   "good_for": [
+    "Multi-step Linux software-engineering tasks involving shell commands, tests, builds, and persistent working directories.",
+    "Tasks requiring interactive command-line tools, REPLs, editors, prompts, or terminal UIs.",
+    "Repository modification tasks where the model can create files with shell scripts or large heredocs and then run verification commands.",
+    "Server and daemon tasks where a process can be started in the background and queried over multiple turns.",
+    "Tasks benefiting from terminal recordings, detailed trajectories, token accounting, or automatic context compaction."
+   ],
+   "avoid_for": [
+    "Tasks requiring direct visual interpretation of screenshots, images, graphical applications, or scanned documents.",
+    "Highly time-sensitive foreground programs where reliable automatic cancellation and completion detection are essential.",
+    "Commands producing more than 10,000 bytes of important output unless the model can inspect it in chunks or redirect it to files.",
+    "Tasks whose success depends on precise synchronization without allowing polling turns.",
+    "Environments where installing tmux, asciinema, package dependencies, or source-build prerequisites is impossible or internet access is unavailable and tmux is not already installed."
+   ]
+  },
+  "mini-swe-agent": {
+   "summary": "mini-swe-agent 2.4.6 is a minimal bash-only coding agent: the language model receives a linear message history, emits bash actions, and the harness executes them in the task environment. The Harbor wrapper installs and invokes mini-swe-agent with a task, model, output trajectory path, and noninteractive settings, then converts mini-swe-agent's trajectory into ATIF.",
+   "interaction_model": "The model acts through bash tool calls, represented internally as action dictionaries containing a command. Each action is executed independently by LocalEnvironment using a new shell via subprocess.Popen(shell=True); there is no persistent shell session. Files and other filesystem changes persist between actions, but shell state such as the current directory and environment-variable changes does not, unless the command explicitly persists them. The wrapper runs mini-swe-agent with --yolo, --exit-immediately, redirects its stdin from /dev/null, and logs its output with tee.",
+   "tools": [
+    "bash: executes an arbitrary shell command in the environment and returns its combined stdout and stderr, return code, and possible exception information."
+   ],
+   "interactive_programs": "It is not designed to drive interactive REPLs, prompts, editors, or TUIs. Commands run in independent subprocesses, and the top-level mini-swe-agent invocation uses stdin redirected from /dev/null; there is no keystroke, terminal-screen, or persistent-session mechanism. Interactive behavior can only be approximated with noninteractive flags, scripts, files, or background processes.",
+   "long_running_processes": "A command has a default 30-second timeout from LocalEnvironmentConfig. On timeout, _run kills the process group on POSIX with SIGKILL, collects remaining output, and reports a timeout exception. A command may start a background process that outlives the command if it returns before timeout, but the harness provides no explicit process-management or persistent-terminal facility, and processes still share the command's execution environment and sandbox.",
+   "file_editing": "The model creates and edits files using ordinary shell commands such as cat heredocs, sed, Python scripts, or any installed editor invoked noninteractively. Files persist across independent commands, so multi-step and multi-file changes are supported. Large edits are possible through shell scripting, but displaying large files or command output is constrained by the observation template, which keeps at most 10,000 output characters as a 5,000-character head and tail.",
+   "observation": "After each action, the model receives a structured observation containing the returncode and command output; stderr is merged into stdout by subprocess.Popen. The model observation template emits full output below 10,000 characters, and otherwise emits output_head, output_tail, elided_chars, and an 'Output too long' warning. Exceptions include exception information and a return code of -1. The agent maintains a linear message list containing model messages and formatted observations.",
+   "context_and_limits": "DefaultAgent queries the model repeatedly until an exit message, submission, or limit. It supports step_limit, cost_limit, wall_time_limit_seconds, and max_consecutive_format_errors, with the packaged config setting step_limit to 0, wall time to 0, max consecutive format errors to 3, and cost_limit to 3.0. However, Harbor's CLI flags define cost_limit with default '0' and the run command includes that flag, so the wrapper normally disables the configured cost limit unless overridden. There is no context compaction or history summarization: the complete linear message history is passed onward. mini-swe-agent tracks model calls and cost, saves its trajectory after each step, and stops on repeated format errors, limits, exceptions, or a successful command whose first non-whitespace output line is exactly COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT. Harbor separately totals token usage and cost from the saved trajectory and converts it to ATIF.",
+   "images_and_documents": "There is no image, PDF, document parsing, or visual-screen tool exposed by the harness. The model can invoke command-line utilities or scripts to inspect files if such utilities are installed, but binary content is not automatically interpreted or presented as multimodal input.",
+   "strengths": [
+    "Very simple and predictable control flow: the only model action is a bash command.",
+    "Filesystem changes persist while avoiding hidden shell-session state, which makes shell execution easy to reproduce and sandbox.",
+    "Each command has an explicit timeout and POSIX timeout handling kills the whole process group to reduce orphaned children.",
+    "The observation format provides return codes, merged output, exception details, and bounded head/tail output for oversized results.",
+    "The packaged prompt gives a concrete software-engineering workflow for inspecting code, reproducing issues, editing, testing, and submitting.",
+    "Supports arbitrary models through LiteLLM, including a Responses-API path for reasoning models, and records token, cache, reasoning-token, and cost metadata.",
+    "Supports custom YAML configuration, reasoning-effort and max-token settings, MCP server information in the task prompt, and trajectory conversion to ATIF."
+   ],
+   "weaknesses": [
+    "There is no persistent shell, so cd commands, shell variables, aliases, shell functions, and other session state disappear after each action.",
+    "It cannot directly send keystrokes or interact with programs waiting for input, so full-screen editors, REPLs, password prompts, and TUIs are poor fits.",
+    "The default 30-second per-command timeout limits long tests, builds, servers, and other lengthy foreground operations.",
+    "Output over 10,000 characters is elided to head and tail, which can hide important middle sections of logs or generated data.",
+    "There is no built-in file API, patch API, search API, or structured test tool; all editing, searching, and verification depend on commands the model constructs.",
+    "The run is linear and has no context compaction, so a long task can exhaust the model context as messages and observations accumulate.",
+    "Malformed model output can cause format-error retries and termination after three consecutive format errors by default.",
+    "Interactive setup is disabled and an API key is required; the wrapper raises an error when no suitable key is found.",
+    "The wrapper's task-level MCP support only appends server descriptions to the instruction; no separate MCP action tool is defined in the shown harness.",
+    "No automatic image or binary-document understanding is provided."
+   ],
+   "good_for": [
+    "Repository bug fixes and feature changes performed through ordinary shell commands.",
+    "Tasks involving code search, scripted reproduction, edits, unit tests, and command-line validation.",
+    "Multi-file refactors where persistent filesystem state matters but a persistent terminal is unnecessary.",
+    "Sandboxed or benchmark-style terminal tasks that can be completed with noninteractive bash commands.",
+    "Models that work well with a simple bash-only interface and linear tool-observation history."
+   ],
+   "avoid_for": [
+    "Tasks requiring interactive REPLs, terminal UIs, curses programs, editors, or repeated user prompts.",
+    "Workflows that require maintaining a shell session, virtual-environment activation, directory state, or exported variables across commands without explicitly recreating them.",
+    "Long-running foreground servers, builds, test suites, or data-processing jobs exceeding the 30-second command timeout.",
+    "Tasks where complete untruncated logs or very large command outputs are essential.",
+    "Image-centric, PDF-centric, or binary-document inspection tasks without additional command-line tooling.",
+    "Tasks requiring sophisticated tool APIs, browser interaction, keystroke control, or parallel interactive sessions."
+   ]
+  },
+  "pi": {
+   "summary": "Pi is a minimal, extensible coding-agent harness that runs the Pi CLI as a non-interactive JSON-printing agent inside the target environment. The model drives the environment through Pi tool calls, primarily `read`, `bash`, `edit`, `write`, and optionally `grep`, `find`, `ls`, or extensions.",
+   "interaction_model": "The harness starts one Pi process through `exec_as_agent`, using `. ~/.nvm/nvm.sh; pi --print --mode json --session-dir /logs/agent/pi/sessions ...`. The user instruction is shell-quoted and passed as the prompt; Pi then makes tool calls against the current working directory. Each built-in bash invocation spawns a new shell process with `child_process.spawn`; shell state such as `cd` and exported variables does not persist between calls unless the command itself uses a persistent mechanism such as `tmux`. Pi sessions are stored as JSONL under `/logs/agent/pi/sessions`, and `--continue` is added when resuming.",
+   "tools": [
+    "`read`: reads text files or supported images, with optional line offset and limit; text is truncated when it exceeds the built-in line/byte limits.",
+    "`bash`: executes a shell command in the current working directory, capturing stdout and stderr; it supports an optional timeout and abort handling.",
+    "`edit`: performs exact, unique, non-overlapping text replacements in one file and returns a diff/unified patch.",
+    "`write`: creates parent directories as needed and creates or overwrites a file with the supplied content.",
+    "`grep`: searches contents using ripgrep, supports regex or literal matching, globs, context, case-insensitivity, and a match limit.",
+    "`find`: searches paths by glob using `fd` by default, respecting git-ignore behavior and a result limit.",
+    "`ls`: lists directory entries, including dotfiles, sorted alphabetically and marking directories with `/`.",
+    "Extensions and installed Pi packages can add custom tools, commands, permission gates, or other behavior; the harness itself does not explicitly install or select any extensions.",
+    "The harness exposes a `--thinking` CLI flag with levels `off`, `minimal`, `low`, `medium`, `high`, and `xhigh`."
+   ],
+   "interactive_programs": "The harness is not a keystroke-driven persistent terminal. The Pi agent run redirects its own stdin from `/dev/null`, and the bash tool normally spawns commands with ignored stdin, so REPLs, editors, password prompts, and full-screen TUIs cannot generally be driven directly through successive tool calls. Persistent interactive programs can be operated indirectly by asking Pi to start them inside `tmux` or another external multiplexer and then issuing shell commands such as `tmux send-keys` and capture commands; this is a workflow suggested by Pi's documentation rather than a dedicated harness API.",
+   "long_running_processes": "A bash tool call waits for its spawned shell and streams its stdout and stderr. It has no default timeout, but a caller may supply one up to the implementation's maximum; on timeout or abort, Pi calls `killProcessTree` on the child. Commands can deliberately launch a server or other background process, preferably under `tmux`, so the command returns while the process remains externally managed; subsequent bash calls can inspect it, send commands, or query logs. There is no built-in background-job manager in the harness.",
+   "file_editing": "Files can be created or completely rewritten with `write`, which creates missing parent directories. Existing files are best changed with `edit`, whose `oldText` must match exactly once; it preserves the original BOM and line-ending style and returns a diff. The model can make multiple disjoint replacements in one edit call, but each file is handled separately. `read` and the search tools truncate large results, so large files require offset/limit or repeated searches; complete large-file rewrites may be cumbersome because the model must supply the entire content to `write`.",
+   "observation": "Pi runs in JSON mode and pipes combined stdout/stderr through `grep -v '\"type\":\"message_update\"'`, then through line-buffered `tee` to `/logs/agent/pi.txt`. The harness therefore records Pi's remaining JSON events and later parses `message_end` assistant events for usage, while the model receives tool results and assistant events rather than terminal screen snapshots. Bash output is streamed during execution but accumulated output is limited by configured maximum lines/bytes; if truncated, Pi saves the full output to a temporary file and reports its path. `read`, `grep`, `find`, and `ls` also impose line, match, result, entry, or byte limits and include continuation or truncation notices.",
+   "context_and_limits": "Pi sessions are JSONL trees and support resume, branching, and automatic or manual compaction. According to the compaction documentation, automatic compaction is enabled by default when context exceeds the context window minus a reserve (default reserve 16,384 tokens), retaining roughly 20,000 recent tokens by default; older content is summarized and the full session remains on disk. Tool outputs are also truncated before being shown to the model, and compaction serialization truncates tool results to 2,000 characters. The harness does not impose a visible fixed number of agent steps in this code; a run ends when Pi exits, the command fails, is aborted, or an outer environment limit terminates it. It aggregates input tokens plus cache-read tokens, output tokens, cache tokens, and reported total cost from JSON `message_end` events; cost is set to null when no positive cost is reported.",
+   "images_and_documents": "The built-in `read` tool detects supported image types including JPG, PNG, GIF, WebP, and BMP, processes them, and sends image data as an attachment when possible. If the selected model lacks image support, it reports that the image will be omitted. There is no specialized PDF, office-document, archive, or other binary-document inspection tool in the supplied code; such files must be handled through bash utilities or extensions.",
+   "strengths": [
+    "Provides a broad default coding-tool set: direct file reading and mutation plus shell execution and dedicated search/listing tools.",
+    "Uses exact replacement editing with validation, BOM and line-ending preservation, mutation serialization, and returned diffs.",
+    "Supports long-running workflows through ordinary shell tools and external mechanisms such as tmux rather than requiring a special terminal protocol.",
+    "Has structured JSON event logging and aggregates token, cache, and cost usage from assistant message events.",
+    "Supports persistent session history, resume, branching, and automatic context compaction.",
+    "Allows extensibility through TypeScript extensions, skills, prompt templates, themes, and Pi packages."
+   ],
+   "weaknesses": [
+    "There is no persistent shell session or direct keystroke/screen interface; interactive programs require indirect control such as tmux.",
+    "The run command redirects stdin to `/dev/null`, making programs that require terminal input unsuitable unless separately multiplexed.",
+    "Bash commands normally execute in fresh shell processes, so working-directory changes and shell variables do not persist automatically.",
+    "Output and file inspection are bounded by truncation limits, requiring the model to issue follow-up reads or searches for large data.",
+    "The `edit` tool only performs exact textual replacements in a single file and fails when the requested old text is missing, ambiguous, overlapping, or not unique.",
+    "Pi intentionally has no built-in sub-agents, plan mode, background bash manager, permission popups, or MCP; those capabilities require extensions, packages, or external tools.",
+    "The harness filters out `message_update` JSON events before logging, so those intermediate Pi events are not available in `pi.txt`."
+   ],
+   "good_for": [
+    "Repository inspection, code search, targeted refactoring, and test execution.",
+    "Tasks involving ordinary shell commands and filesystem changes where each command can be run independently.",
+    "Structured coding workflows that benefit from exact edits, diffs, session resume, and context compaction.",
+    "Image-aware code or asset inspection when the selected model supports image input.",
+    "Server, watcher, or REPL workflows that can be managed through tmux or another shell-accessible multiplexer."
+   ],
+   "avoid_for": [
+    "Tasks requiring direct interactive keystrokes into a foreground REPL, editor, installer, password prompt, or full-screen terminal UI.",
+    "Tasks requiring shell state to persist naturally across many commands without explicitly using tmux or scripts.",
+    "Very large-file transformations where exact replacement payloads or repeated truncated reads would be impractical.",
+    "Binary-document analysis such as PDFs or office files when no suitable command-line utility or extension is available.",
+    "Workflows that require built-in multi-agent delegation, plan mode, interactive permission prompts, or a dedicated background-process API."
+   ]
+  }
+ },
+ "profiles": {
+  "terminus-2": {
+   "summary": "Terminus-2 is a language-model-driven terminal agent that asks the model for JSON or XML command objects containing shell keystrokes, sends them to a persistent tmux-backed bash session, and returns terminal output. It can record terminal activity with asciinema, maintain ATIF-style trajectories, and summarize context through additional LLM calls.",
+   "interaction_model": "At setup, the harness creates a named tmux session running bash --login. For each model response, the selected parser extracts command objects, and _execute_commands sends their keystrokes to the same tmux pane while waiting for the requested duration. The working directory, shell state, processes, and interactive programs therefore persist across steps. Supporting operations invoke tmux through the environment rather than running each requested command with subprocess.run.",
+   "tools": [
+    "bash_command: The model emits a JSON or XML command object containing literal keystrokes and a duration; the harness sends those keystrokes to the persistent tmux shell.",
+    "mark_task_complete: The model sets task_complete in its parsed response; the harness requests confirmation and finishes only after the model marks completion on the following turn as well.",
+    "terminal observation: After a command batch, the harness captures tmux output and returns new terminal output or the current visible screen.",
+    "context summarization: When enabled, the harness can make three additional LLM calls to summarize prior work, identify missing information, and answer the resulting questions."
+   ],
+   "interactive_programs": "Yes. The model controls a real persistent tmux pane with literal keystrokes, including control keys such as C-c and C-d. It can interact with REPLs, input prompts, editors, and terminal UIs. Commands are normally sent non-blockingly, so the model may need additional polling commands to determine whether a program has finished. Large literal input can use a tmux paste buffer.",
+   "long_running_processes": "The model can start foreground or background processes in the persistent shell and use them in later turns, including servers started with shell backgrounding such as &. Command durations are capped at 60 seconds. In the normal execution path, the duration is a wait rather than a process-kill timeout; a foreground process can remain running after the observation. The separate blocking TmuxSession mode is not used by this command path, although a send_keys TimeoutError can produce a timeout observation.",
+   "file_editing": "The model edits files through shell commands, heredocs, scripts, editors, or other terminal input. Normal key payloads are limited to roughly 16,000 bytes per batch. For larger literal payloads, the harness can base64-encode and chunk the data into /tmp, load it into a tmux buffer, and paste it. Multi-file changes are possible, but the model must construct and verify them through terminal commands.",
+   "observation": "The harness captures tmux output with tmux capture-pane -p. It normally compares the current capture with the previous capture and returns either New Terminal Output or Current Terminal Screen; if incremental output cannot be determined, it falls back to the current screen. Each observation is limited to 10,000 UTF-8 bytes, retaining approximately the first and last halves with an omission marker. A command batch produces one resulting observation.",
+   "context_and_limits": "The default maximum is 1,000,000 episodes, but max_turns and deprecated episode settings can reduce it. The model must return valid JSON or XML; parse errors produce corrective feedback and execute no commands from the malformed response. Command durations are capped at 60 seconds. Context summarization is enabled by default and starts proactively when estimated free context falls below 8,000 tokens; on overflow, the harness attempts full, short, and terminal-screen-only fallback summarization paths. Summarization adds LLM calls and can split or reset chat and trajectory history. The harness tracks token usage, cost, request times, episode count, and optional rollout details. Execution ends when the session dies, confirmed completion succeeds, or an episode or error limit is reached. Setup can spend up to 240 seconds attempting to install tmux or asciinema, with individual installation commands capped at 120 seconds.",
+   "images_and_documents": "The harness has no native image, PDF, or binary-document inspection interface. The model can invoke terminal utilities to inspect text representations, metadata, OCR output, or converted files when such utilities are available, but observations are terminal text.",
+   "strengths": [
+    "Persistent interactive Linux shell with preserved cwd, environment, shell state, REPLs, and background processes.",
+    "Direct tmux keystroke control for prompts, editors, terminal UIs, and control-key sequences.",
+    "Command batching, configurable waits, pane-history capture, and incremental-output detection.",
+    "Large literal file writes through the chunked base64 and tmux paste-buffer fallback.",
+    "Two-step completion confirmation and optional terminal recordings, trajectories, accounting, and context compaction."
+   ],
+   "weaknesses": [
+    "Every action must be encoded as valid JSON or XML; malformed responses require a correction turn.",
+    "Normal execution is non-blocking, so inaccurate durations can produce observations before commands finish and require explicit polling.",
+    "Terminal observations are limited to 10,000 bytes and may fall back to only the visible screen.",
+    "There is no native visual understanding of images, graphical applications, PDFs, or binary documents.",
+    "Context summarization consumes additional LLM calls and may lose detail or alter the retained chat and trajectory history.",
+    "Foreground processes are not automatically killed when a normal command wait expires.",
+    "tmux or asciinema setup may require package-manager or source-build prerequisites and can consume setup time."
+   ],
+   "good_for": [
+    "Interactive shell workflows involving REPLs, editors, password or input prompts, curses programs, or terminal UIs.",
+    "Repository tasks requiring persistent cwd, shell variables, virtual-environment state, background servers, or multiple shell-dependent steps.",
+    "Software builds, tests, and debugging sessions where processes continue across turns and can be polled.",
+    "Large heredoc or generated-file edits delivered through terminal input.",
+    "Tasks that need terminal recordings, detailed trajectories, or automatic context summarization."
+   ],
+   "avoid_for": [
+    "Direct interpretation of screenshots, graphical applications, scanned documents, PDFs, or binary files without command-line conversion tools.",
+    "Foreground jobs requiring reliable automatic cancellation at a precise timeout.",
+    "Tasks whose important output routinely exceeds 10,000 bytes and cannot be redirected or inspected in chunks.",
+    "Tasks requiring precise completion synchronization without allowing polling turns.",
+    "Environments where tmux cannot be installed or built and is not already available."
+   ],
+   "choose_when": "Choose Terminus-2 over mini-swe-agent or Pi when the task depends on a persistent shell, direct keystrokes, interactive terminal programs, or processes that must remain available across turns. It is also preferable when large terminal-delivered file contents, pane-history observations, recordings, or context summarization are important."
+  },
+  "mini-swe-agent": {
+   "summary": "mini-swe-agent 2.4.6 is a minimal bash-only coding agent. The model emits bash actions, and the harness executes each action in the task environment. The Harbor wrapper invokes it with a task, model, trajectory path, and noninteractive settings, then converts its trajectory to ATIF.",
+   "interaction_model": "The model acts through bash tool calls represented as command dictionaries. Each action runs independently through LocalEnvironment using subprocess.Popen(shell=True) in a new shell. Filesystem changes persist, but cwd changes, shell variables, aliases, functions, and other shell-session state do not persist unless the command explicitly persists them. The wrapper uses --yolo and --exit-immediately, redirects its stdin from /dev/null, and logs output with tee.",
+   "tools": [
+    "bash: Executes an arbitrary shell command and returns combined stdout and stderr, a return code, and possible exception information."
+   ],
+   "interactive_programs": "The harness is not designed to drive interactive REPLs, prompts, editors, or terminal UIs. There is no persistent terminal or keystroke interface, and the top-level process receives stdin from /dev/null. Interactive behavior can only be approximated with noninteractive flags, scripts, files, or background processes.",
+   "long_running_processes": "LocalEnvironment gives each command a default 30-second timeout. On POSIX timeout, the process group is killed with SIGKILL and remaining output is collected. A command can start a background process that outlives it if the command returns before the timeout, but the harness provides no persistent terminal or explicit process-management facility for that process.",
+   "file_editing": "The model creates and edits files with shell commands such as heredocs, sed, Python scripts, or noninteractive editor invocations. Files persist across independent commands, so multi-file changes are supported. Command output is limited to 10,000 characters, represented for larger output by a 5,000-character head and tail.",
+   "observation": "After each action, the model receives a structured observation containing the return code and merged stdout and stderr. Output below 10,000 characters is returned in full; larger output is represented by output_head, output_tail, elided_chars, and an Output too long warning. Exceptions include exception information and return code -1. The agent retains a linear message history of model messages and formatted observations.",
+   "context_and_limits": "DefaultAgent continues until an exit message, submission, or a configured limit. It supports step_limit, cost_limit, wall_time_limit_seconds, and max_consecutive_format_errors. The packaged configuration sets step_limit and wall time to 0, max consecutive format errors to 3, and cost_limit to 3.0, but Harbor's run command supplies a cost_limit default of 0, normally disabling that configured cost limit unless overridden. There is no context compaction or history summarization; the complete linear history is passed onward. The agent saves its trajectory after each step and stops on repeated format errors, limits, exceptions, or a successful command whose first non-whitespace output line is exactly COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT. Harbor separately totals usage and cost from the trajectory.",
+   "images_and_documents": "The harness has no image, PDF, document-parsing, or visual-screen tool. The model can invoke installed command-line utilities or scripts to inspect files, but binary content is not automatically interpreted or supplied as multimodal input.",
+   "strengths": [
+    "Simple bash-only control flow with arbitrary shell commands.",
+    "Persistent filesystem changes without persistent hidden shell-session state.",
+    "Explicit per-command timeout and POSIX process-group termination on timeout.",
+    "Structured return codes, merged output, exception information, and bounded output.",
+    "A software-engineering workflow suited to code inspection, reproduction, editing, testing, and submission.",
+    "Trajectory, token, cache, reasoning-token, and cost accounting."
+   ],
+   "weaknesses": [
+    "No persistent shell, so cwd, variables, aliases, functions, and activation state disappear after each action.",
+    "No direct keystrokes or terminal-screen interface for REPLs, prompts, editors, password entry, or TUIs.",
+    "The default 30-second command timeout limits long foreground jobs.",
+    "Output over 10,000 characters is reduced to head and tail.",
+    "There is no built-in file, patch, search, test, or structured editing API; all such operations use commands.",
+    "There is no context compaction, so the linear history can exhaust the model context.",
+    "Three consecutive format errors can terminate the run by default.",
+    "The wrapper requires a suitable API key and runs noninteractively.",
+    "The shown MCP support only adds server descriptions to the task prompt and does not define an MCP action tool."
+   ],
+   "good_for": [
+    "Repository bug fixes and feature work performed with noninteractive shell commands.",
+    "Code search, scripted reproduction, multi-file edits, unit tests, and command-line validation.",
+    "Sandboxed benchmark tasks that can be completed through independent bash commands.",
+    "Refactors where filesystem persistence matters but persistent cwd or interactive terminal state does not.",
+    "Tasks where explicit timeout and process-group cleanup are more important than long-running execution."
+   ],
+   "avoid_for": [
+    "REPLs, terminal UIs, curses programs, interactive editors, password prompts, or installers requiring keystrokes.",
+    "Workflows requiring persistent cwd, activated environments, exported variables, aliases, or shell functions across commands.",
+    "Foreground builds, test suites, servers, or data-processing jobs that exceed the 30-second timeout.",
+    "Tasks requiring complete logs or command output whose important content may fall in the elided middle.",
+    "Image, PDF, or binary-document inspection without suitable command-line tools.",
+    "Tasks requiring browser interaction, dedicated tool APIs, parallel interactive sessions, or direct terminal control."
+   ],
+   "choose_when": "Choose mini-swe-agent over Terminus-2 or Pi for straightforward, noninteractive repository changes that fit within independent bash commands and benefit from a strict 30-second process-group timeout. It is the simplest choice when no persistent shell state, direct file API, image input, or interactive process control is needed."
+  },
+  "pi": {
+   "summary": "Pi is an extensible coding-agent harness that runs the Pi CLI as a noninteractive JSON-printing agent in the target environment. The model uses Pi tools, primarily read, bash, edit, and write, with optional grep, find, ls, and extensions.",
+   "interaction_model": "The harness starts one Pi process through exec_as_agent using pi --print --mode json --session-dir ... . Pi makes tool calls in the current working directory. Each built-in bash call spawns a new shell with child_process.spawn, so cd and exported variables do not persist between calls unless the command uses an external persistence mechanism such as tmux. Pi sessions are stored as JSONL and can be resumed with --continue.",
+   "tools": [
+    "read: Reads text files or supported images, with optional line offset and limit; large text results are truncated by built-in limits.",
+    "bash: Executes a shell command in the current working directory, capturing stdout and stderr, with optional timeout and abort handling.",
+    "edit: Performs exact, unique, non-overlapping text replacements in one file and returns a diff.",
+    "write: Creates parent directories and creates or overwrites a file.",
+    "grep: Searches file contents with ripgrep using regex or literal matching, globs, context, case options, and a match limit.",
+    "find: Searches paths by glob using fd by default, respecting git-ignore behavior and a result limit.",
+    "ls: Lists directory entries, including dotfiles, sorted alphabetically and marking directories with /.",
+    "Extensions and installed Pi packages can add tools or other behavior; the supplied harness does not explicitly install or select extensions.",
+    "The harness exposes a --thinking flag with off, minimal, low, medium, high, and xhigh levels."
+   ],
+   "interactive_programs": "Pi is not a direct keystroke-driven persistent terminal. Its stdin is redirected from /dev/null, and bash normally runs with ignored stdin, so REPLs, editors, password prompts, and full-screen TUIs cannot generally be driven directly. The model can indirectly operate a persistent program by starting it under tmux or another external multiplexer and using later bash calls for commands such as tmux send-keys and capture commands.",
+   "long_running_processes": "A bash call waits for its spawned shell and streams stdout and stderr. It has no default timeout, although a caller may provide one subject to the implementation's maximum; on timeout or abort, Pi calls killProcessTree on the child. A command can launch a server or other process in the background, preferably under tmux, so it can be inspected or controlled by later bash calls. There is no built-in background-job manager.",
+   "file_editing": "The model can create or replace files with write, which creates missing parent directories. Existing files are best changed with edit, whose oldText must match exactly once; it preserves BOM and line-ending style and returns a diff. Multiple disjoint replacements can be made in one edit call, but only within one file. Large files require offset/limit reads or repeated searches, and a complete rewrite requires supplying the full content to write.",
+   "observation": "Pi runs in JSON mode. The harness filters out message_update events, records remaining JSON events through tee, and later parses message_end assistant events for usage. Tool results and assistant events are provided to the model rather than terminal-screen snapshots. Bash output is streamed and bounded by configured maximum lines and bytes; truncated output is saved to a temporary file and its path is reported. read, grep, find, and ls also impose their respective line, match, result, entry, or byte limits and report truncation or continuation information.",
+   "context_and_limits": "Pi sessions are JSONL trees supporting resume and branching. Automatic compaction is enabled by default when context exceeds the context window minus a reserve, with a default reserve of 16,384 tokens; it retains roughly 20,000 recent tokens by default, summarizes older content, and keeps the full session on disk. Tool outputs are truncated before being shown to the model, and compaction serialization truncates tool results to 2,000 characters. The supplied harness does not impose a visible fixed step count; execution ends when Pi exits, the command fails or is aborted, or an outer limit terminates it. The harness aggregates input, cache-read, output, cache, and reported total cost from message_end events; cost is null when no positive cost is reported.",
+   "images_and_documents": "The built-in read tool supports JPG, PNG, GIF, WebP, and BMP images and can send image data as an attachment when possible. If the selected model lacks image support, read reports that the image will be omitted. There is no specialized PDF, office-document, archive, or other binary-document tool; such files require bash utilities or extensions.",
+   "strengths": [
+    "Dedicated read, write, exact edit, grep, find, ls, and bash tools for repository work.",
+    "Exact replacement editing with uniqueness validation, BOM and line-ending preservation, and returned diffs.",
+    "No default bash timeout, allowing commands longer than mini-swe-agent's default when they complete normally.",
+    "Persistent session history, resume, branching, and automatic context compaction.",
+    "Image reading for supported image types when the selected model supports image input.",
+    "Structured JSON event logging and usage aggregation.",
+    "Extensibility through TypeScript extensions, skills, prompt templates, themes, and Pi packages."
+   ],
+   "weaknesses": [
+    "No persistent shell session or direct keystroke and screen interface; interactive programs require indirect mechanisms such as tmux.",
+    "stdin is redirected to /dev/null, so programs requiring terminal input are unsuitable unless separately multiplexed.",
+    "Bash cwd and shell variables do not persist automatically between calls.",
+    "Tool and file-inspection results are bounded by truncation limits, requiring follow-up reads or searches for large data.",
+    "edit handles only exact textual replacements in one file and fails for missing, ambiguous, overlapping, or non-unique oldText.",
+    "There is no built-in sub-agent, plan mode, background bash manager, permission popup, or MCP tool in the supplied harness.",
+    "message_update events are filtered out of the recorded pi.txt log."
+   ],
+   "good_for": [
+    "Repository inspection, code search, targeted refactoring, and tests using the dedicated file and search tools.",
+    "Tasks needing exact edits, returned diffs, BOM or line-ending preservation, and multi-step file inspection.",
+    "Long-running noninteractive shell commands that do not need mini-swe-agent's explicit 30-second default timeout.",
+    "Image-aware code or asset inspection for supported image types with a model that accepts image input.",
+    "Server or watcher workflows that can be managed through tmux or another shell-accessible multiplexer.",
+    "Long coding sessions that benefit from resumable JSONL history and automatic context compaction."
+   ],
+   "avoid_for": [
+    "Direct interactive keystrokes into foreground REPLs, editors, installers, password prompts, or full-screen terminal UIs.",
+    "Tasks requiring shell state to persist naturally across many bash calls without scripts or tmux.",
+    "Very large-file transformations where exact replacement payloads or repeated truncated reads are impractical.",
+    "PDF, office-document, archive, or other binary-document analysis without suitable utilities or extensions.",
+    "Workflows requiring built-in multi-agent delegation, plan mode, interactive permissions, MCP actions, or a dedicated background-process API."
+   ],
+   "choose_when": "Choose Pi over mini-swe-agent when repository work benefits from dedicated read/search/list tools, exact diff-producing edits, image input, commands without mini-swe-agent's default 30-second timeout, or resumable context-compacted sessions. Choose it over Terminus-2 when direct terminal interactivity is unnecessary and structured file operations or image inspection are more valuable than a persistent tmux shell."
+  }
+ },
+ "frozen_at": "2026-10-03T20:58:30",
+ "profiles_sha256": "571147c38da306ef",
+ "review": "Spot-checked against source: mini-swe-agent LocalEnvironment timeout=30 s; pi bash has no default timeout."
+}

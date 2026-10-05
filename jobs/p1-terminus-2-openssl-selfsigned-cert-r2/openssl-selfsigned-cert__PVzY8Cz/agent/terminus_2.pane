@@ -1,0 +1,86 @@
+[?2004hroot@c3cd6acc85e6:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@c3cd6acc85e6:/app# clear
+[?2004l[H[J[3J[?2004hroot@c3cd6acc85e6:/app# mkdir -p /app/ssl
+[?2004l[?2004hroot@c3cd6acc85e6:/app# openssl req -x509 -newkey rsa:2048 -nodes -keyout /app/ssl/server.key -out /app/ssl/server.crt -days 365 -subj "/O=DevOps Team/CN=dev-internal.company.local"
+[?2004l.....+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*..+..........+...+.........+..+...+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*.+.........+.+..+...................+......+.....+.......+..+.+...+...............+.....+.......+........+......+.+............+......+..+............+.+..+....+...+.....+...+...+....+..+.........+.......+..+.......+.....+.+.........+...+...+..................+..+.........+...+......+.........+.+..........................+.+...+......+...+........+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.+.........+......+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*...........+..+...+............+.+...............+........+.+...+........+...+....+....................+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*...........+........+.+.....+....+.....+......+..........+.....+......+.+...+.........+.....+...+...+.+........+.......+......+.........+..................+........+...+..........+.....+....+...+.....+....+...+..................+........+.+...+......+.....+.......+.....+..........+.....+.......+..+...............+.+...+..+.......+.....+...+...................+...+..+..........+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-----
+[?2004hroot@c3cd6acc85e6:/app# chmod 600 /app/ssl/server.key
+[?2004l[?2004hroot@c3cd6acc85e6:/app# cat /app/ssl/server.key /app/ssl/server.crt > /app/ssl/server.pem
+[?2004l[?2004hroot@c3cd6acc85e6:/app# chmod 644 /app/ssl/server.crt /app/ssl/server.pem
+[?2004l[?2004hroot@c3cd6acc85e6:/app# openssl x509 -in /app/ssl/server.crt -noout -subject -startdate -enddate -fingerprint -sha256 > /app/ssl/verification.txt
+[?2004l[?2004hroot@c3cd6acc85e6:/app# chmod 644 /app/ssl/verification.txt
+[?2004l[?2004hroot@c3cd6acc85e6:/app# cat > /app/check_cert.py <<'PY'
+[?2004lverification successful")
+PY
+chmod 755 /app/check_cert.py
+/app/check_cert.py
+[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> import os
+[?2004l[?2004h> import ssl
+[?2004l[?2004h> from datetime import datetime
+[?2004l[?2004h> from email.utils import parsedate_to_datetime
+[?2004l[?2004h> 
+[?2004l[?2004h> CERT_PATH = "/app/ssl/server.crt"
+[?2004l[?2004h> 
+[?2004l[?2004h> if not os.path.isfile(CERT_PATH):
+[?2004l[?2004h>     raise SystemExit(f"Certificate not found: {CERT_PATH}")
+[?2004l[?2004h> 
+[?2004l[?2004h> try:
+[?2004l[?2004h>     with open(CERT_PATH, "rb") as cert_file:
+[?2004l[?2004h>         pem_data = cert_file.read()
+[?2004l[?2004h>     ssl.PEM_cert_to_DER_cert(pem_data.decode("ascii"))
+[?2004l[?2004h>     cert_info = ssl._ssl._test_decode_cert(CERT_PATH)
+[?2004l[?2004h> except Exception as exc:
+[?2004l[?2004h>     raise SystemExit(f"Certificate could not be loaded: {exc}")
+[?2004l[?2004h> 
+[?2004l[?2004h> common_name = None
+[?2004l[?2004h> for attribute in cert_info.get("subject", ()):
+[?2004l[?2004h>     for key, value in attribute:
+[?2004l[?2004h>         if key == "commonName":
+[?2004l[?2004h>             common_name = value
+[?2004l[?2004h>             break
+[?2004l[?2004h>     if common_name:
+[?2004l[?2004h>         break
+[?2004l[?2004h> 
+[?2004l[?2004h> if not common_name:
+[?2004l[?2004h>     raise SystemExit("Common Name not found")
+[?2004l[?2004h> 
+[?2004l[?2004h> expiration = parsedate_to_datetime(cert_info["notAfter"]).date().isoformat()
+[?2004l[?2004h> print(f"Common Name: {common_name}")
+[?2004l[?2004h> print(f"Expiration date: {expiration}")
+[?2004l[?2004h> print("Certificate verification successful")
+[?2004l[?2004h> PY
+[?2004l[?2004hroot@c3cd6acc85e6:/app# chmod 755 /app/check_cert.py
+[?2004l[?2004hroot@c3cd6acc85e6:/app# /app/check_cert.py
+[?2004lCommon Name: dev-internal.company.local
+Expiration date: 2027-10-04
+Certificate verification successful
+[?2004hroot@c3cd6acc85e6:/app# printf '%s\n' '--- Files and permissions ---'
+[?2004l--- Files and permissions ---
+[?2004hroot@c3cd6acc85e6:/app# ls -l /app/ssl /app/check_cert.py
+[?2004l-rwxr-xr-x 1 root root 1018 Oct  4 00:46 /app/check_cert.py
+
+/app/ssl:
+total 16
+-rw-r--r-- 1 root root 1220 Oct  4 00:46 server.crt
+-rw------- 1 root root 1704 Oct  4 00:46 server.key
+-rw-r--r-- 1 root root 2924 Oct  4 00:46 server.pem
+-rw-r--r-- 1 root root  241 Oct  4 00:46 verification.txt
+[?2004hroot@c3cd6acc85e6:/app# printf '%s\n' '--- Verification ---'
+[?2004l--- Verification ---
+[?2004hroot@c3cd6acc85e6:/app# cat /app/ssl/verification.txt
+[?2004lsubject=O = DevOps Team, CN = dev-internal.company.local
+notBefore=Oct  4 00:46:50 2026 GMT
+notAfter=Oct  4 00:46:50 2027 GMT
+sha256 Fingerprint=C8:6C:E4:19:74:84:76:82:20:EF:F8:52:89:12:65:A9:10:FA:6C:2B:A2:1F:D4:CF:42:FA:CF:F8:D5:C2:BA:6F
+[?2004hroot@c3cd6acc85e6:/app# printf '%s\n' '--- Certificate summary ---'
+[?2004l--- Certificate summary ---
+[?2004hroot@c3cd6acc85e6:/app# openssl x509 -in /app/ssl/server.crt -noout -subject -dates -issuer
+[?2004lsubject=O = DevOps Team, CN = dev-internal.company.local
+notBefore=Oct  4 00:46:50 2026 GMT
+notAfter=Oct  4 00:46:50 2027 GMT
+issuer=O = DevOps Team, CN = dev-internal.company.local
+[?2004hroot@c3cd6acc85e6:/app# 
