@@ -1,5 +1,21 @@
 # GPT-5.6-LUNA + Terminus-2 Benchmark Results
 
+> **Superseded. Read this as a September 2026 lab notebook, not as results.**
+>
+> Everything below comes from single runs on 5 to 21 tasks. The study now has 453 runs over 27 development tasks
+> with 3 repeats per task and harness, and three of this file's conclusions do not survive it:
+>
+> | Claim below | What 453 runs show |
+> |---|---|
+> | "**Pi harness is the clear winner** - fastest execution, lowest cost, perfect success rate!" | `pi` is the **weakest** of the three at 54.3%, against 61.7% for `mini-swe-agent` and 60.5% for `terminus-2`. The "perfect success rate" was 3 tasks, 1 run each. |
+> | "GPT-5.6-LUNA + Terminus-2 represents the breakthrough model/harness combo" | `terminus-2` matches `mini-swe-agent` on pass rate while costing about 2.2x as much. |
+> | Per-task verdicts from one run each | Only 50 of 81 task x harness cells give the same result on all three repeats, so single runs cannot rank harnesses on a task. |
+>
+> Current results: [`PROBLEM_DEFINITION.md`](PROBLEM_DEFINITION.md). Current method:
+> [`STUDY_PLAN.md`](STUDY_PLAN.md). Session history: [`PROJECT_LOG.md`](PROJECT_LOG.md).
+>
+> Kept because the per-run timings, costs and error messages are still the primary record of those runs.
+
 ## Summary
 Testing GPT-5.6-LUNA model with Terminus-2 agent on Harbor terminal-bench tasks. This model/harness combination achieved **4/5 successful completions** (80% success rate).
 
@@ -425,7 +441,7 @@ Findings:
 
 **Conclusion**: with Luna 5.6 and 21 tasks, routing by task description provides no measurable benefit over a fixed harness or random choice. Cheapest reasonable default: pick any single harness (Mini-SWE / Terminus-2 are statistically indistinguishable here). More tasks and repeats are the only way to detect a real per-task harness effect.
 
-Code: `router/router.py` (LangGraph router, watchdog removed; `--router gemma|luna`, `--force <harness>`), `router/router2.py` (v1/v2 pick functions), `router/eval_routers.py`, `router/outcomes.py`; watchdog archived in `router/archive_watchdog/`.
+Code: `router/router.py` (LangGraph router, watchdog removed; `--router gemma|luna`, `--force <harness>`), `router/router2.py` (v1/v2 pick functions), `archive/eval_routers.py` (archived 7 Oct), `router/outcomes.py`; watchdog archived in `router/archive_watchdog/`.
 
 Housekeeping: fixed an empty `certifi/cacert.pem` in the router venv (reinstalled certifi) that had broken `langchain_openai` imports.
 

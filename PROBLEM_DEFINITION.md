@@ -86,9 +86,13 @@ router lands at or below it, and the ordering is stable across seeds 0, 1 and 2:
 | LLM router (Jev, frozen profiles) | 56.8 | −4.9 [−16.0, +7.4] | +59% |
 | k-NN on task text (TF-IDF) | 51.9–55.6 | −6.2 to −9.9 | +16% to +22% |
 
-Task metadata carries almost no signal: a depth-2 tree predicting the best harness gets 52% leave-one-out accuracy
-against 41% for always answering mini-swe-agent, and predicting *whether* the harnesses disagree does worse than
-guessing (48% against a 70% majority). Nothing meets the +5-point criterion with a CI excluding zero.
+Task metadata carries almost no usable signal: a depth-2 tree predicting the best harness gets 52% leave-one-out
+accuracy against 41% for always answering mini-swe-agent, and predicting *whether* the harnesses disagree does
+worse than guessing (48% against a 70% majority). Part of this is a sample-size problem rather than a feature
+problem — of 81 binary feature columns on the 27 development tasks, 2 never fire and 64 fire on fewer than 3
+tasks, so only 17 can split at all at `min_samples_leaf=3`, and nearly every `category=` and `tag=` column is a
+singleton. That is an argument for finishing the remaining 44 tasks before concluding the features are useless.
+Nothing meets the +5-point criterion with a CI excluding zero.
 
 **RQ3 — the overhead is not the binding problem; the accuracy is.** Routing costs little ($0.004–$0.17 over 27
 tasks, 0–107 s), but since no router beats the baseline there is no gain to justify. Fallback is a clearer win and

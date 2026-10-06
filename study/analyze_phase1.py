@@ -71,11 +71,6 @@ def cell(cells, task, h):
             (("pass", "reward"), ("cost", "cost"), ("tokens", "tokens"), ("minutes", "minutes"))}
 
 
-def means(cells, task, h):
-    c = cell(cells, task, h)
-    return c["pass"], c["cost"]
-
-
 def load_picks():
     p = os.path.join(ROOT, "router", "picks_profiles.json")
     if not os.path.exists(p):
@@ -88,14 +83,21 @@ def load_picks():
     return by
 
 
+def ran(cells, t):
+    """Harnesses that produced at least one scored run. An empty cell reads as pass 0 at cost $0, which would win
+    both oracles' cheaper-harness tie-break, so a harness that never ran must not be a candidate."""
+    return [h for h in HARNESSES if cells[t][h]]
+
+
 def stable_pick(cells, t):
-    return max(HARNESSES, key=lambda h: (cell(cells, t, h)["pass"], -cell(cells, t, h)["cost"]))
+    pool = ran(cells, t) or HARNESSES
+    return max(pool, key=lambda h: (cell(cells, t, h)["pass"], -cell(cells, t, h)["cost"]))
 
 
 def cheapest_pass_pick(cells, t):
-    passed = [h for h in HARNESSES if any(x["reward"] > 0 for x in cells[t][h])]
-    pool = passed or HARNESSES
-    return min(pool, key=lambda h: cell(cells, t, h)["cost"])
+    pool = ran(cells, t) or HARNESSES
+    passed = [h for h in pool if any(x["reward"] > 0 for x in cells[t][h])]
+    return min(passed or pool, key=lambda h: cell(cells, t, h)["cost"])
 
 
 def score(tasks, choose, cells):
@@ -179,7 +181,7 @@ def main():
         open(f"{ROOT}/study/test_unseal_log.jsonl", "a").write(json.dumps(rec) + "\n")
         print(f"TEST SET UNSEALED (logged): {rec}\n")
 
-    cells, broken, failures = load_runs(a.jobs_glob)
+    cells, _, failures = load_runs(a.jobs_glob)
     tasks_all = split[a.split]
     if a.count_install_failures:
         tasks = [t for t in tasks_all if any(cells[t][h] for h in HARNESSES)]

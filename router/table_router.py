@@ -130,17 +130,25 @@ def call(system, user, key, model):
 
 
 def pick(name, text, router="jev", key=None, exact=True, drop=()):
-    """Returns (harness or None, info). Known Table A tasks skip the model call.
+    """Returns (harness or None, info).
 
-    For evaluation use exact=False with drop = the held-out tasks, so the router is judged only on analogy.
+    exact=True is the deployment path: a task listed in Table A is answered from the table with no model call, and
+    the frozen system prompt is used for everything else.
+    exact=False is the evaluation path: the exact-match rule and the task's own row are removed, so the pick is a
+    real routing decision by analogy. Pass drop = the rest of the held-out fold as well.
+
+    drop only applies when exact=False; asking for both is a contradiction and is refused rather than silently
+    downgraded, because the two produce very different numbers.
     """
+    if drop and exact:
+        raise ValueError("drop is an evaluation-only argument; pass exact=False with it")
     t, digest = load_table()
     best = {r["task"]: r["best"] for r in t["table_a"]}
-    if exact and name in best:
-        return best[name], {"underlying_model": None, "table_sha256": digest, "match": "exact",
-                            "reason": "known task (hard-coded cache)", "seconds": 0.0,
-                            "tokens": {"in": 0, "out": 0}, "cost": 0.0}
-    if exact and not drop:
+    if exact:
+        if name in best:
+            return best[name], {"underlying_model": None, "table_sha256": digest, "match": "exact",
+                                "reason": "known task (hard-coded cache)", "seconds": 0.0,
+                                "tokens": {"in": 0, "out": 0}, "cost": 0.0}
         system = load_system_prompt(digest)
     else:
         profiles, _ = pr.load_profiles()

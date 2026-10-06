@@ -45,6 +45,66 @@ never past benchmark results.
 
 ---
 
+## 3e. Session log: 7 Oct 2026 — codebase skim: bugs, leak guards, archive
+
+A read-through of the repository looking for problems rather than new results.
+
+### Bugs fixed
+- **An oracle could pick a harness that never ran.** `cell()` reports an empty task x harness cell as pass 0 at
+  cost $0, and both oracles tie-break toward the cheaper harness, so a harness with zero runs won. Confirmed on
+  `qemu-startup`, where `mini-swe-agent` and `pi` never install: both oracles returned `mini-swe-agent` at $0
+  while `terminus-2` was the only harness that actually ran. `stable_pick` and `cheapest_pass_pick` now draw from
+  harnesses that produced runs, so both return `terminus-2`. No development number moves (all 27 development tasks
+  have all three harnesses); this affected `--count-install-failures` and any test-split scoring.
+- **Honest table-router picks were unreachable from the command line.** `table_router.pick` supports
+  `exact=False, drop=...` for analogy-only evaluation, but `pick_offline.py` always used the defaults, so every
+  saved `jev-table` / `luna-table` development pick was a cache hit that would have been scored as routing. Added
+  `pick_offline.py --analogy-only`, stored under `<router>-analogy` so the two kinds can never be averaged
+  together. `pick` now raises on `drop` with `exact=True` instead of silently downgrading.
+- **`pick_offline.py` demanded an API key for `lookup`**, which makes no request. The key is now read lazily and
+  only required by routers that call out; `--routers lookup` runs with no key at all.
+- **`fallback_sim.py` silently dropped the cache row** when `study/kfold_results_dev_fixed.json` was absent. It now
+  says so and names the command to run first.
+
+### Test-set leak guard
+`router/outcomes.py` printed per-task pass rates for everything in `jobs/`, test tasks included, with no guard and
+no log entry — the same shape of mistake that exposed the test set on 5 Oct. Its command line now shows
+development tasks only; `--split test` or `--split all` needs `--unseal` and appends to
+`study/test_unseal_log.jsonl`. `build()` is unchanged, so importers are unaffected.
+
+### Fold purity
+`study/kfold_eval.py` built the one-hot matrix over all tasks before splitting, so the category and tag vocabulary
+was informed by the held-out fold. `task_features.py` gained `one_hot_vocab()` / `one_hot_apply()` and the tree now
+fits the vocabulary on the training fold only. The numbers are identical across seeds 0, 1 and 2, so the leak was
+harmless — but the method no longer has to be explained away.
+
+### A sharper reason the metadata tree fails
+`task_features.py` now reports inert feature columns, and the result is stark: of 81 binary columns on the 27
+development tasks, **2 never fire and 64 fire on fewer than 3 tasks**, so only 17 can split at all at
+`min_samples_leaf=3`. Nearly every `category=` and `tag=` column is a singleton. The tree's 52% leave-one-out
+accuracy is therefore less "metadata carries no signal" and more "there are not enough tasks per category to learn
+one", which is an argument for filling in the remaining 44 tasks.
+
+### Archived (nothing deleted)
+`archive/` with a README explaining each file: the two watchdog runners (they pass `--watchdog`, which `router.py`
+rejects, and point `TB_TASK_DIR` at a temp path that no longer exists), both copies of `finish_phase1.sh` (a spent
+one-shot ending in `git add -A` and an automatic commit), `eval_routers.py` and `picks_cache.json` (September task
+lists, old-prompt picks, two `if False` branches in one expression), `router_log 2.jsonl` and the duplicate Qwen
+xlsx, and six tracked scratch outputs. `router/prompt_iterations.py` imported `TRAIN`/`HELD` from
+`eval_routers.py`, so those two lists were inlined there, verified identical to the originals.
+
+### Docs corrected
+- `README.md` claimed "Routers are **blind**: their prompts contain only the task text and facts about how each
+  harness works, never past benchmark results." That is false for `table_router.py` (frozen development results in
+  the system prompt), `lookup` (a pure table read) and `gate_router.py` (trained on Qwen reward labels). Replaced
+  with a per-router table of what each one sees. The findings section, still the 21-task September study, was
+  replaced with the Phase 1 and k-fold results, and a section on the sealed test set was added.
+- `GPT-5.6-LUNA-BENCHMARK-RESULTS.md` now opens with a superseded notice naming the three claims the 453-run study
+  contradicts, the loudest being "Pi harness is the clear winner — perfect success rate", from 3 tasks at 1 run
+  each, against pi being the weakest harness at 54.3%.
+
+---
+
 ## 3d. Session log: 7 Oct 2026 — cross-validated evaluation, feature analysis, fallback
 
 Implemented the review plan in `PROBLEM_DEFINITION.md`. Headline: **no router beats always `mini-swe-agent`**, and
@@ -399,17 +459,17 @@ Scored offline with the measured means (expected passes out of 5, execution cost
 `CancelledError` 1, `NonZeroAgentExitCodeError` 1, `RewardFileNotFoundError` 1. These are infrastructure failures,
 not agent mistakes; a router should retry them rather than count them as fails (not implemented yet).
 
-### 4.3 Code / repo issues (not fixed)
-- `study/run_wd.sh` and `study/run_router_wd.sh` pass `--watchdog`, which `router.py` no longer supports (watchdog
-  removed and archived). They also set `TB_TASK_DIR` to a temporary path under `~/.claude/jobs/...`.
+### 4.3 Code / repo issues
+All of the items below were **fixed on 7 Oct** (see 3e), except the one marked open.
+- ~~`study/run_wd.sh` and `study/run_router_wd.sh` pass `--watchdog`, which `router.py` no longer supports~~ — moved
+  to `archive/`.
 - Task paths differ: `gate_router.py` uses `~/.cache/harbor/tasks/*/<task>/`, `router.py` and `router2.py` use
-  `~/.cache/harbor/tasks/packages/terminal-bench/<task>/*/`. Both work on this machine.
-- `router/picks_cache.json` holds picks made with the old prompt; `eval_routers.py` reuses them. Rename/delete it
-  before re-evaluating the new prompt.
-- Duplicates: the two copies of `Qwen_89_Task_Comparison_2026-09-20.xlsx` are identical;
-  `router/router_log 2.jsonl` repeats the first 20 entries of `router/router_log_gemma.jsonl`.
-- Top sections of `GPT-5.6-LUNA-BENCHMARK-RESULTS.md` ("Terminus-2 breakthrough", "Pi is the clear winner") are
-  contradicted by later sections.
+  `~/.cache/harbor/tasks/packages/terminal-bench/<task>/*/`. Both work on this machine. **Open**, harmless.
+- ~~`router/picks_cache.json` holds picks made with the old prompt; `eval_routers.py` reuses them~~ — both archived.
+- ~~Duplicates: two identical copies of `Qwen_89_Task_Comparison_2026-09-20.xlsx`; `router/router_log 2.jsonl`
+  repeats the first 20 entries of `router/router_log_gemma.jsonl`~~ — the duplicates are in `archive/`.
+- ~~Top sections of `GPT-5.6-LUNA-BENCHMARK-RESULTS.md` ("Terminus-2 breakthrough", "Pi is the clear winner") are
+  contradicted by later sections~~ — the file now opens with a superseded notice naming each contradicted claim.
 
 ### 4.4 Methodology risks
 - The 7 held-out tasks have now been looked at several times; they are no longer a clean test. New tasks are needed
@@ -466,13 +526,18 @@ Next:
 Older ideas:
 
 1. Meta-harness: package the router as a single Harbor agent so it can be benchmarked like a harness.
-2. Embedding nearest-neighbour router in `cv_gate.py`, evaluated leave-one-out.
-3. Add cost per pass to `eval_routers.py`; treat cost as a first-class metric.
-4. Try Terminal-Bench metadata (category, tags, difficulty) as features; for non-Terminal-Bench prompts, have an
-   LLM generate the same fields.
-5. Retry infrastructure failures instead of counting them as fails.
-6. Evaluation: fresh held-out tasks, 3+ repeats per cell, confidence intervals, prompts frozen before testing.
-7. Housekeeping: fix or delete the broken `study/` watchdog scripts, remove duplicates, fix the iCloud venv issue.
+2. Embedding nearest-neighbour router in `cv_gate.py`, evaluated leave-one-out. Done offline with TF-IDF in
+   `study/kfold_eval.py`: it is the worst strategy tested. Embeddings still untried (needs the API key).
+3. ~~Add cost per pass to `eval_routers.py`~~ — cost per pass is now a first-class metric in
+   `study/analyze_phase1.py` and `study/kfold_eval.py`; `eval_routers.py` is archived.
+4. ~~Try Terminal-Bench metadata (category, tags, difficulty) as features~~ — done in `study/task_features.py`;
+   almost no signal. For non-Terminal-Bench prompts, having an LLM generate the same fields is still untried.
+5. ~~Retry infrastructure failures instead of counting them as fails~~ — done in `study/run_phase1.sh`, and
+   `study/fallback_sim.py` measures what an automatic retry would buy.
+6. ~~Evaluation: fresh held-out tasks, 3+ repeats per cell, confidence intervals, prompts frozen before testing~~ —
+   all in place since Phase 1; k-fold cross-validation is now the main evaluation.
+7. ~~Housekeeping: fix or delete the broken `study/` watchdog scripts, remove duplicates~~ — moved to `archive/`.
+   The iCloud venv issue is **open** (the project is still on Desktop).
 
 ---
 

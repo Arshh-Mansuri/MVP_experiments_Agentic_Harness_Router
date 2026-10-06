@@ -66,18 +66,47 @@ def features(task):
     return f, instr
 
 
-def one_hot(rows, cats=("difficulty", "category")):
-    """Numeric feature matrix (list of dicts) for sklearn: one-hot difficulty/category/tags + numeric + keywords."""
-    vocab = {c: sorted({r[c] for r in rows}) for c in cats}
-    tagv = sorted({t for r in rows for t in r["tags"].split(";") if t})
+NUMERIC = ("expert_min", "junior_min", "agent_timeout_sec", "memory_mb", "instruction_chars")
+
+
+def one_hot_vocab(rows, cats=("difficulty", "category")):
+    """The category and tag levels to encode. Fit this on training rows only when cross-validating, otherwise the
+    encoding itself is informed by the held-out fold."""
+    return {"cats": {c: sorted({r[c] for r in rows}) for c in cats},
+            "tags": sorted({t for r in rows for t in r["tags"].split(";") if t})}
+
+
+def one_hot_apply(rows, vocab):
+    """Numeric feature matrix (list of dicts) for sklearn. A level absent from the vocabulary encodes as all-zeros,
+    which is what an unseen category should look like."""
     out = []
     for r in rows:
-        x = {f"{c}={v}": int(r[c] == v) for c in cats for v in vocab[c]}
-        x.update({f"tag={t}": int(t in r["tags"].split(";")) for t in tagv})
-        x.update({k: r[k] for k in ("expert_min", "junior_min", "agent_timeout_sec", "memory_mb", "instruction_chars")})
+        x = {f"{c}={v}": int(r[c] == v) for c, vs in vocab["cats"].items() for v in vs}
+        x.update({f"tag={t}": int(t in r["tags"].split(";")) for t in vocab["tags"]})
+        x.update({k: r[k] for k in NUMERIC})
         x.update({k: r[k] for k in KEYWORDS})
         out.append(x)
     return out
+
+
+def one_hot(rows, cats=("difficulty", "category")):
+    """One-shot encoding of a single set of rows (no train/test split involved)."""
+    return one_hot_apply(rows, one_hot_vocab(rows, cats))
+
+
+def report_inert(X_dicts, min_fires=3):
+    """Binary columns that fire on fewer than min_fires tasks cannot produce a split at min_samples_leaf=min_fires,
+    so they are dead weight in the tree. Printing them keeps that limitation visible next to the result."""
+    binary = [n for n in X_dicts[0] if all(d[n] in (0, 1) for d in X_dicts)]
+    counts = {n: sum(d[n] for d in X_dicts) for n in binary}
+    never = [n for n, c in counts.items() if c == 0]
+    rare = [f"{n} ({c})" for n, c in sorted(counts.items(), key=lambda kv: kv[1]) if 0 < c < min_fires]
+    print(f"\n{len(binary)} binary feature columns; {len(never)} never fire and {len(rare)} fire on fewer than "
+          f"{min_fires} tasks, so neither can split at min_samples_leaf={min_fires}")
+    if never:
+        print(f"  never fire: {', '.join(sorted(never))}")
+    if rare:
+        print(f"  too rare:   {', '.join(rare)}")
 
 
 def tree_analysis(tasks, cells, depth=2):
@@ -89,6 +118,7 @@ def tree_analysis(tasks, cells, depth=2):
     rows = [features(t)[0] for t in tasks]
     X_dicts = one_hot(rows)
     names = list(X_dicts[0])
+    report_inert(X_dicts)
     X = [[d[n] for n in names] for d in X_dicts]
     best = [an.stable_pick(cells, t) for t in tasks]
     spread = [max(an.cell(cells, t, h)["pass"] for h in an.HARNESSES) -

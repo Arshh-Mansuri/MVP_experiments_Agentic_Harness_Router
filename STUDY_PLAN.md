@@ -105,4 +105,5 @@ All routers are frozen (prompts, rules, model versions recorded) before the test
 | `study/run_live_router.sh` | One live Harbor run of a router's choice, harness version pinned; appends to `study/live_runs.jsonl` |
 | `router/harness_research.py` | Luna writes the harness profiles from source code |
 | `router/profile_router.py` | Picks a harness from the frozen profiles (Jev or Luna) |
-| `router/pick_offline.py` | Makes and saves picks for all Phase 1 tasks (`router/picks_profiles.json`) |
+| `router/pick_offline.py` | Makes and saves picks for all Phase 1 tasks (`router/picks_profiles.json`); `--analogy-only` makes table-router picks that are routing decisions rather than cache hits |
+| `router/outcomes.py` | Task x harness reward table from `jobs/`; prints development tasks only unless `--unseal` (logged) |

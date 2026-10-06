@@ -10,8 +10,12 @@ usage: python prompt_iterations.py [--reps 2]
 import argparse, collections, glob, json, os, re, statistics as st, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 import outcomes
-from eval_routers import TRAIN, HELD
 from router2 import CARDS, GUIDE, HARNESSES, DEFAULT, V1_PROMPT, task_text
+
+# The September split these prompt variants were written against, inlined when eval_routers.py was archived.
+# It is not the Phase 1 split: see study/phase1_tasks.json for the current development / test sets.
+TRAIN = "fix-git cobol-modernization git-leak-recovery prove-plus-comm polyglot-c-py db-wal-recovery winning-avg-corewars count-dataset-tokens build-cython-ext large-scale-text-editing headless-terminal gcode-to-text distribution-search constraints-scheduling".split()
+HELD = "multi-source-data-merger feal-linear-cryptanalysis protein-assembly cancel-async-tasks code-from-image torch-pipeline-parallelism crack-7z-hash path-tracing chess-best-move schemelike-metacircular-eval".split()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 JOBS = os.path.join(HERE, "..", "jobs")

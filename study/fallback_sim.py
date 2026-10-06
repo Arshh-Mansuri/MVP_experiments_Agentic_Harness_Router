@@ -161,13 +161,15 @@ def main():
         return next((h for h in cheap_first if h not in tried), None)
 
     starts = {f"always {h}": (lambda t, h=h: h) for h in HARNESSES}
-    starts["cache: lookup (k-fold, honest)"] = None  # filled from the k-fold picks if they exist
+    label = "cache: lookup (k-fold, honest)"
     kf = f"{ROOT}/study/kfold_results_dev_fixed.json"
-    if os.path.exists(kf):
-        picks = json.load(open(kf))["picks"].get("cache: lookup (k-fold, honest)") or {}
-        if all(t in picks for t in tasks):
-            starts["cache: lookup (k-fold, honest)"] = lambda t, p=picks: p[t]
-    starts = {k: v for k, v in starts.items() if v}
+    picks = json.load(open(kf))["picks"].get(label) or {} if os.path.exists(kf) else {}
+    missing = [t for t in tasks if t not in picks]
+    if not missing:
+        starts[label] = lambda t, p=picks: p[t]
+    else:
+        print(f"\nnote: no k-fold lookup picks for {len(missing)} of {len(tasks)} tasks, so '{label}' is not "
+              f"simulated. Run this first: python3 study/kfold_eval.py --baseline fixed")
 
     print(f"\n{'start harness':34} {'retries':>8} {'pass % no fb':>12} {'pass % fb':>10} {'gain':>6} "
           f"{'same-h':>8} {'$ no fb':>8} {'$ fb':>7} {'extra $':>8} {'h no fb':>8} {'h fb':>6} {'$/pass fb':>10}")

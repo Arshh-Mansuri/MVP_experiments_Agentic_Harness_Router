@@ -68,15 +68,23 @@ def knn_from(train, cells, texts, k=3):
     return lambda task: model.predict([texts[task]])[0]
 
 
-def tree_from(train, cells, rows, depth=2):
+def tree_from(train, cells, feats, depth=2):
+    """The one-hot vocabulary is fitted on the training fold only, so a category or tag that appears solely in the
+    held-out fold cannot create a column; it encodes as all-zeros instead."""
     from sklearn.tree import DecisionTreeClassifier
     y = [an.stable_pick(cells, t) for t in train]
     if len(set(y)) < 2:
         return lambda task: y[0]
-    names = list(rows[train[0]])
+    vocab = tf.one_hot_vocab([feats[t] for t in train])
+    X = tf.one_hot_apply([feats[t] for t in train], vocab)
+    names = list(X[0])
     clf = DecisionTreeClassifier(max_depth=depth, min_samples_leaf=3, random_state=0)
-    clf.fit([[rows[t][n] for n in names] for t in train], y)
-    return lambda task: clf.predict([[rows[task][n] for n in names]])[0]
+    clf.fit([[d[n] for n in names] for d in X], y)
+
+    def predict(task):
+        d = tf.one_hot_apply([feats[task]], vocab)[0]
+        return clf.predict([[d[n] for n in names]])[0]
+    return predict
 
 
 def main():
@@ -103,13 +111,14 @@ def main():
     tasks = sorted(t for t in pool if all(cells[t][h] for h in HARNESSES))
     folds = fold_of(tasks, a.folds, a.seed)
 
-    texts = {t: tf.features(t)[1] for t in tasks}
-    rows = {t: d for t, d in zip(tasks, tf.one_hot([tf.features(t)[0] for t in tasks]))}
+    extracted = {t: tf.features(t) for t in tasks}
+    texts = {t: v[1] for t, v in extracted.items()}
+    feats = {t: v[0] for t, v in extracted.items()}  # encoded per fold, not up front
     qwen = qwen_table()
 
     # learned strategies: fitted on the training folds, predicting the held-out fold
     learners = {"learned: k-NN on task text (TF-IDF)": lambda tr: knn_from(tr, cells, texts),
-                "learned: decision tree on metadata": lambda tr: tree_from(tr, cells, rows),
+                "learned: decision tree on metadata": lambda tr: tree_from(tr, cells, feats),
                 "cache: lookup (k-fold, honest)": lambda tr: lookup_from(tr, cells, qwen)}
     picks = {name: {} for name in learners}
     baseline_pick = {}
