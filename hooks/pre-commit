@@ -1,0 +1,17 @@
+#!/bin/sh
+# Block commits that carry a credential, so an agent that dumped `env` into its transcript cannot
+# publish our keys again. Scans only the staged files, which keeps it fast on a repo full of run
+# artefacts. Bypass with `git commit --no-verify` if you are certain a match is a false positive.
+set -e
+
+files=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$files" ] && exit 0
+
+# shellcheck disable=SC2086
+if ! python3 "$(git rev-parse --show-toplevel)/study/scrub_secrets.py" $files; then
+	echo
+	echo "pre-commit: refusing to commit a credential."
+	echo "  redact with: python3 study/scrub_secrets.py --apply $(echo $files | tr '\n' ' ')"
+	echo "  then rotate the credential, because a committed key must be treated as public."
+	exit 1
+fi

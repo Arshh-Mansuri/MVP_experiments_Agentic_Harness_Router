@@ -45,6 +45,50 @@ never past benchmark results.
 
 ---
 
+## 3f. Session log: 7 Oct 2026 — OpenRouter key leaked through a run artefact
+
+### What happened
+Two OpenRouter keys were committed in `ce466e2` and pushed to a **public** GitHub repository, in five run
+artefacts: 12 occurrences across `jobs/p1-mini-swe-agent-crack-7z-hash-r1-retry1/` (3 files) and
+`jobs/p1-pi-crack-7z-hash-r2/` (2 files). One of the two was the key still live in `.env`, which is the likely
+explanation for the 401 responses since 7 Oct: OpenRouter disables keys that GitHub's secret scanning reports.
+
+### Root cause
+Not a mistake in our code. `crack-7z-hash` instructs the agent to recover a password, so the agent ran `env`
+inside the container; the dump included `OPENROUTER_API_KEY` and went straight into the transcript we commit.
+
+The leak is specific to the harnesses that run **inside** the container. `mini-swe-agent` and `pi` live in
+`harbor/agents/installed/`, so Harbor passes the key into their environment. `terminus-2` drives the container
+from the host and never sees it — it ran all three repeats of the same task and leaked nothing. Any
+container-installed harness on any task can do this; `crack-7z-hash` only made it likely.
+
+### Fixes
+- `study/scrub_secrets.py` redacts credentials in run artefacts, matching both the literal values in `.env` and
+  known credential formats. Byte-level, so it survives the NUL bytes in `mini-swe-agent.txt`. Dry run by
+  default; exit status 1 when anything is found, so a hook can call it.
+- `hooks/pre-commit` (with `core.hooksPath=hooks`, so it is tracked rather than living in `.git/`) blocks any
+  commit whose staged files carry a credential.
+- All 12 occurrences redacted to `<REDACTED:OPENROUTER_API_KEY>`. The artefacts stay usable: the ATIF
+  trajectory still parses with its 105 steps, and the pi session file with its 69 JSON lines.
+
+### The key is stored in two places
+A repo-wide scan found the same OpenRouter key, plus an `OPENCODE_API_KEY`, in
+`.claude/settings.local.json`. That file is gitignored and never leaked, but rotation has to update it as well
+as `.env` or the tools reading it will hold a dead key. The scrubber skips `.env` and `.claude/` for this
+reason: they are the legitimate homes for a credential, and rewriting them would break a working setup without
+removing anything from the repository.
+
+### Deliberately not treated as secrets
+A naive scan flags 23 more files, because agent logs are full of long random identifiers that happen to contain
+`hf_` or `ghp_` mid-string. The scrubber requires a non-token character on each side of a match, and restricts
+`hf_`/`ghp_` to their real lengths, so those are left alone. Only the OpenRouter keys actually leaked.
+
+### Still outstanding
+Rotating both keys is the only real remediation — redaction does not retract a public push. History rewriting
+is a separate decision, since it means a force-push to a protected public branch.
+
+---
+
 ## 3e. Session log: 7 Oct 2026 — codebase skim: bugs, leak guards, archive
 
 A read-through of the repository looking for problems rather than new results.

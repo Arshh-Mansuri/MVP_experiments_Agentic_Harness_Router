@@ -93,6 +93,17 @@ Load it before any run:
 set -a; . ./.env; set +a; export OPENROUTER_API_KEY
 ```
 
+Enable the credential hook. `core.hooksPath` is local config, so a fresh clone has to set it once:
+
+```bash
+git config core.hooksPath hooks
+```
+
+This matters because the key reaches the harnesses that run inside the container (`mini-swe-agent`, `pi`), so a
+task that tells the agent to hunt for a password will make it dump `env` into a transcript we commit — which is
+how two keys ended up in a public commit (see `PROJECT_LOG.md` section 3f). The hook refuses such a commit;
+`python3 study/scrub_secrets.py --apply` redacts artefacts that already contain one.
+
 Terminal-Bench tasks are read from Harbor's cache (`~/.cache/harbor/tasks/`); download them with
 `harbor download terminal-bench --cache`.
 
