@@ -45,6 +45,87 @@ never past benchmark results.
 
 ---
 
+## 3d. Session log: 7 Oct 2026 — cross-validated evaluation, feature analysis, fallback
+
+Implemented the review plan in `PROBLEM_DEFINITION.md`. Headline: **no router beats always `mini-swe-agent`**, and
+that now holds under cross-validation rather than on one split.
+
+### k-fold evaluation (`study/kfold_eval.py`) — this is now the main evaluation
+- 5 folds over the 27 development tasks. Anything learned from outcomes (k-NN, metadata tree, the lookup table) is
+  fitted on the training folds only and predicts the held-out fold, so in-sample leakage cannot inflate it. Fixed
+  LLM routers do not learn, so k-fold only changes what they are compared against.
+- Two baselines, because the choice matters. `--baseline fold` re-picks the best single harness per training fold:
+  it picks terminus-2 on some folds and mini-swe-agent on others and lands at **59.3%**, below always
+  mini-swe-agent's 61.7%. That instability makes everything look better than it is, so claims use `--baseline
+  fixed` (mini-swe-agent held constant).
+- Against the fixed baseline, stable across seeds 0/1/2: lookup cache 64.2% (+2.5 [−2.5, +8.6], cost per pass
+  −15%), metadata tree 58.0–61.7%, Luna profiles 58.0%, Jev 56.8%, k-NN on task text 51.9–55.6% (CI excludes zero
+  on two of three seeds, i.e. reliably **worse**). Nothing meets the +5-point criterion.
+- The lookup cache's +2.5 is entirely the Qwen fallback and is seed-independent, because a held-out task is never
+  in the training table.
+
+### Feature analysis (`study/task_features.py`)
+- Features from `task.toml` (difficulty, category, tags, expert/junior minutes, agent timeout, memory) plus
+  instruction length and keyword flags, for all 45 tasks -> `study/task_features.csv`.
+- Depth-2 tree for best harness: **52% leave-one-out accuracy against 41%** for always answering mini-swe-agent.
+  Predicting *whether* the harnesses disagree is worse than guessing: 48% against a 70% majority. Splits are on
+  `instruction_chars` and `junior_min`, which is length, not content.
+- On that evidence the hand-written keyword/regex router was dropped (user's call, 7 Oct): with no usable keyword
+  split, writing rules by hand would be fitting 27 tasks by eye. k-NN and the metadata tree stand in as the
+  learned routers.
+
+### Fallback simulation (`study/fallback_sim.py`)
+- Triggers use only what is visible while a run happens: the harness crashed with no result (49 Phase 1 runs) or
+  the agent hit its time limit (`AgentTimeoutError`, 18 runs, 17 of which then failed the tests). The verifier's
+  reward is never used to trigger.
+- `--crashes count` uses the first attempt of each repeat, so a crash reaches the fallback as a deployment would
+  see it; `--crashes superseded` uses the manual same-harness retry we actually ran and matches
+  `analyze_phase1.py`. The two differ a lot: always-terminus-2 reads 51.9% in the first mode, 60.5% in the second.
+- One retry on the cheapest untried harness: terminus-2 51.9% -> 61.7%, pi 49.4% -> 54.3%, mini-swe-agent
+  59.3% -> 60.5%, at roughly $0.02–$0.06 and 0.1–0.5 h per extra pass. A second retry adds nothing.
+- **Same-harness retry control:** +8.6 (terminus-2), +4.9 (pi), **+2.5 for mini-swe-agent against +1.2 for
+  switching**, +3.7 for the lookup cache against +1.2. So the fallback's gain is crash recovery, not harness
+  choice, and for the harness we would actually ship, plain retry is better. Reported this way from now on.
+
+### Harness version drift (a confound we had not caught)
+- Phase 1 runs mix **pi 1.0.0 (7 runs), 1.0.1 (87), 1.0.2 (39)** plus 16 with no version recorded, while
+  terminus-2 (2.0.0) and mini-swe-agent (2.4.6) were stable. On development tasks pi scores 54.9% on 1.0.1 (n=51)
+  against 52.0% on 1.0.2 (n=25), 18 tasks shared — small next to the noise, but "pi" is not one harness in this data.
+- `study/run_phase1.sh` now pins versions via `--ak version=...` (`V_TERMINUS2`/`V_MINI`/`V_PI`, defaulting to the
+  versions most Phase 1 runs used). Every future run states its version.
+
+### Ready to run, blocked on the OpenRouter key
+- `study/queue_remaining.py` -> `study/phase2_queue.txt`: the 44 uncovered tasks x 3 harnesses x 3 repeats = 396
+  runs, about $7 and 14 h of wall-clock at `PARALLEL=3`, which completes 89-task coverage.
+- `study/run_live_router.sh <task> [router]`: one live Harbor run of the router's choice with the version pinned,
+  appending to `study/live_runs.jsonl`. Dry-run verified on all three lookup paths (Table A hit, Qwen fallback,
+  default). `lookup` needs no router API call, but the executor still needs the key.
+
+---
+
+## 3c. Session log: 7 Oct 2026 — success table and hard-coded lookup
+
+- `router/build_success_table.py` writes the frozen `router/success_table.json` / `.md` (sha256 `203bc53928de12c4`).
+  Table A: Luna Phase 1 results on the 27 development tasks only (best harness per task, ties to the cheaper one,
+  unsolved tasks default to `mini-swe-agent`; best = mini-swe-agent 11, pi 10, terminus-2 6). Table B: Qwen3-Coder
+  results on all 89 tasks (different model, 1 run each), a weak hint.
+- `router/table_router.py`:
+  - `lookup(task)`: **hard-coded**, no model call. (1) Task in Table A -> its best Luna harness; (2) else, task in
+    Table B -> `mini-swe-agent` if Qwen passed with it, otherwise the harness Qwen passed with; (3) else
+    `mini-swe-agent`. Available as `--router lookup` in `router.py` and in `pick_offline.py`.
+  - Check of the Qwen fallback on the 27 development tasks (fair: Qwen results predate Phase 1, other model): the
+    Qwen-only rule scores 64.2% vs 61.7% for always `mini-swe-agent`, from 3 tasks it moves off mini-swe-agent
+    (`cancel-async-tasks`, `count-dataset-tokens` -> terminus-2; `crack-7z-hash` -> pi). Small and noisy, but in
+    the right direction. On the 18 test tasks it changes 2 picks: `mailman` -> terminus-2,
+    `model-extraction-relu-logits` -> pi.
+  - `pick(...)`: LLM version (Jev or Luna) that uses Table A by exact match or analogy, Table B to break ties.
+    Not run yet: OpenRouter returned **401 Unauthorized** for every call on 7 Oct (key disabled or out of credit;
+    `.env` unchanged since 18 Sep). No cost incurred.
+- Development-set score of `lookup`: 75.3%, +13.6 points over always `mini-swe-agent` — **identical to perfect
+  picking by construction**, because the table is built from those same runs (labelled "in-sample" in the
+  analysis). On the test tasks it is "always mini-swe-agent" except the 2 Qwen-based picks above, so the test set
+  measures only the Qwen fallback.
+
 ## 3b. Session log: 5 Oct 2026 — Phase 1 finished, development-set results
 
 ### Runs

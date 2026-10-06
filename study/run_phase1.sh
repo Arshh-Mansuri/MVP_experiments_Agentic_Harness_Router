@@ -17,6 +17,10 @@ QUEUE="${1:-study/phase1_queue.txt}"
 export PARALLEL="${PARALLEL:-3}" MAX_RETRIES="${MAX_RETRIES:-2}" DRY_RUN="${DRY_RUN:-0}" MIN_CREDIT="${MIN_CREDIT:-0.5}"
 export PRUNE_BELOW_GB="${PRUNE_BELOW_GB:-20}" MIN_FREE_GB="${MIN_FREE_GB:-6}"
 export MODEL="openrouter/openai/gpt-5.6-luna"
+# Harness versions are pinned. pi drifted 1.0.0 -> 1.0.1 -> 1.0.2 part-way through Phase 1 (54.9% on 51 runs of
+# 1.0.1 against 52.0% on 25 runs of 1.0.2, 18 development tasks shared), so leaving the version floating mixes two
+# harnesses under one name. The defaults are whichever version most Phase 1 runs already used.
+export V_TERMINUS2="${V_TERMINUS2:-2.0.0}" V_MINI="${V_MINI:-2.4.6}" V_PI="${V_PI:-1.0.1}"
 export LOG_DIR="study/logs"
 mkdir -p "$LOG_DIR"
 
@@ -40,6 +44,10 @@ credit_ok() {  # stop launching runs once the OpenRouter key is nearly out of cr
   left=$(curl -s https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_API_KEY" |
     python3 -c "import json,sys; r=json.load(sys.stdin)['data'].get('limit_remaining'); print(9999 if r is None else r)" 2>/dev/null) || return 0
   python3 -c "import sys; sys.exit(0 if float('${left:-9999}') >= float('$MIN_CREDIT') else 1)"
+}
+
+harness_version() {
+  case "$1" in terminus-2) echo "$V_TERMINUS2";; mini-swe-agent) echo "$V_MINI";; pi) echo "$V_PI";; *) echo "";; esac
 }
 
 free_gb() { df -g / | awk 'NR==2 {print $4}'; }
@@ -67,13 +75,14 @@ run_slot() {  # $1 task, $2 harness, $3 repeat
   done
   if [ "$attempt" -gt "$MAX_RETRIES" ]; then echo "give up $base ($attempt attempts without reward)"; return 0; fi
   job="$base"; [ "$attempt" -gt 0 ] && job="$base-retry$attempt"
-  if [ "$DRY_RUN" = 1 ]; then echo "would run $job"; return 0; fi
-  echo "start $job"
+  local ver; ver=$(harness_version "$harness")
+  if [ "$DRY_RUN" = 1 ]; then echo "would run $job (${harness}${ver:+ v$ver})"; return 0; fi
+  echo "start $job (${harness}${ver:+ v$ver})"
   harbor run -t "terminal-bench/$task" --model "$MODEL" --agent "$harness" --job-name "$job" \
-    >"$LOG_DIR/$job.log" 2>&1 || true
+    ${ver:+--ak version="$ver"} >"$LOG_DIR/$job.log" 2>&1 || true
   if has_reward "jobs/$job"; then echo "done  $job"; else echo "fail  $job (no reward, will retry on next pass)"; fi
 }
-export -f has_reward credit_ok free_gb disk_ok run_slot
+export -f has_reward credit_ok free_gb disk_ok harness_version run_slot
 rm -f "$LOG_DIR/STOP_LOW_CREDIT"
 
 grep -v '^\s*$' "$QUEUE" | caffeinate -i xargs -P "$PARALLEL" -L 1 bash -c 'run_slot "$0" "$1" "$2"'

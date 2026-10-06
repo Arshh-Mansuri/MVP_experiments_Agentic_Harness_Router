@@ -4,6 +4,9 @@ Both routers see the same frozen profiles and task text; only the picking model 
   jev           typesafe/jev-router (the router under test)
   luna-profiles openai/gpt-5.6-luna (comparison, isolates the effect of the profiles from the effect of Jev)
   luna-cards    the existing Luna router: hand-written cards + rules (router2.V1_PROMPT), no profiles
+  jev-table     Jev with the frozen success table (table_router.py): Luna dev results + Qwen 89 as a weak hint
+  luna-table    Luna with the same success table
+  lookup        hard-coded: Table A best harness for known tasks, mini-swe-agent otherwise (no model call)
 
 usage: python router/pick_offline.py [--routers jev luna-profiles] [--reps 2] [--split dev|test|all]
 writes router/picks_profiles.json (appends new picks; existing (router, task, rep) entries are kept)
@@ -15,7 +18,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import profile_router as pr
 
-NAMES = {"jev": "jev", "luna-profiles": "luna", "luna-cards": "luna"}
+NAMES = {"jev": "jev", "luna-profiles": "luna", "luna-cards": "luna", "jev-table": "jev", "luna-table": "luna",
+         "lookup": None}
 OUT = os.path.join(HERE, "picks_profiles.json")
 
 
@@ -51,6 +55,12 @@ def main():
         try:
             if rt == "luna-cards":
                 h, info = pick_cards(pr.task_text(t), key)
+            elif rt == "lookup":
+                import table_router
+                h, info = table_router.lookup(t)
+            elif rt.endswith("-table"):
+                import table_router
+                h, info = table_router.pick(t, pr.task_text(t), NAMES[rt], key)
             else:
                 h, info = pr.pick(pr.task_text(t), NAMES[rt], key)
             return {**info, "router": rt, "task": t, "rep": rep, "harness": h}

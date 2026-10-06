@@ -170,6 +170,64 @@ def strategy_rows(unsealed):
     return out
 
 
+def kfold_rows():
+    """Cross-validated scores from study/kfold_eval.py, the main evaluation. 'fixed' is the baseline used for claims."""
+    out = []
+    for mode in ("fixed", "fold"):
+        path = f"{ROOT}/study/kfold_results_dev_{mode}.json"
+        if not os.path.exists(path):
+            continue
+        res = load_json(path)
+        for name, s in res["results"].items():
+            out.append({
+                "baseline_mode": mode, "strategy": name, "folds": res["folds"], "seed": res["seed"],
+                "tasks_scored": len(res["tasks"]), "pass_rate_pct": round(s["pass_rate"], 1),
+                "diff_vs_baseline_pts": round(s["diff_mean"], 1),
+                "ci95_low": round(s["ci"][0], 1), "ci95_high": round(s["ci"][1], 1),
+                "headroom_recovered_pct": round(100 * s["headroom_recovered"], 0),
+                "total_cost_usd": round(s["cost"], 4), "cost_per_pass_usd": round(s["cost_per_pass"], 4),
+                "cost_per_pass_change_pct": round(100 * s["cost_per_pass_change"], 1),
+                "routing_cost_usd": round(s["routing_cost"], 4),
+                "meets_pass_criterion": s["meets_pass_criterion"], "meets_cost_criterion": s["meets_cost_criterion"],
+            })
+    return out
+
+
+def fallback_rows():
+    """Fallback simulation from study/fallback_sim.py, with the same-harness-retry control beside it."""
+    path = f"{ROOT}/study/fallback_results_dev.json"
+    if not os.path.exists(path):
+        return []
+    res = load_json(path)
+    out = []
+    for name, r in res["results"].items():
+        off, on, ctl = r["no_fallback"], r["fallback"], r["same_harness_retry"]
+        out.append({
+            "start_harness": name, "tasks_scored": len(res["tasks"]),
+            "retry_order": " -> ".join(res["retry_order"]), "max_retries": res["max_retries"],
+            "pass_rate_no_fallback_pct": round(off["pass_rate"], 1),
+            "pass_rate_with_fallback_pct": round(on["pass_rate"], 1),
+            "gain_switch_harness_pts": round(on["pass_rate"] - off["pass_rate"], 1),
+            "gain_same_harness_retry_pts": round(ctl["pass_rate"] - off["pass_rate"], 1),
+            "triggers": ", ".join(f"{k} {v}" for k, v in sorted(r["triggers"].items())) or "none",
+            "retries_used": round(on["retries"], 2), "passes_gained": round(r["passes_gained"], 2),
+            "extra_cost_usd": round(on["cost"] - off["cost"], 4),
+            "extra_cost_per_gained_pass_usd": (round(r["extra_cost_per_gained_pass"], 4)
+                                               if r["extra_cost_per_gained_pass"] else None),
+            "extra_hours_per_gained_pass": (round(r["extra_hours_per_gained_pass"], 2)
+                                            if r["extra_hours_per_gained_pass"] else None),
+        })
+    return out
+
+
+def feature_rows():
+    path = f"{ROOT}/study/task_features.csv"
+    if not os.path.exists(path):
+        return []
+    with open(path) as f:
+        return list(csv.DictReader(f))
+
+
 def pick_rows():
     path = f"{ROOT}/router/picks_profiles.json"
     if not os.path.exists(path):
@@ -245,8 +303,19 @@ def notes_rows(split, rows, unsealed):
         ("Decision: sleep-affected runs", "3 runs in progress while the laptop slept (5 Oct, 00:46-09:49) were set aside "
                                           "in jobs_set_aside/ and rerun. They are listed but not counted."),
         ("Withdrawn", "The earlier Jev-as-picker study (29 Sep) was withdrawn and is not in this file."),
-        ("Sheets", "Phase1 runs: one row per attempt | Task x harness: per-cell pass rates | Strategies: analysis output | "
+        ("Sheets", "Phase1 runs: one row per attempt | Task x harness: per-cell pass rates | Strategies: single dev/test "
+                   "split | K-fold: cross-validated scores, the main evaluation | Fallback: retry on an observable failure, "
+                   "with the same-harness control | Task features: task.toml metadata and keyword flags | "
                    "Router picks: every pick with reason | Failures: broken attempts by harness | Older runs: pre-study jobs"),
+        ("Read K-fold, not Strategies", "Strategies scores one dev/test split and lets a strategy that learned from those "
+                                        "same tasks look perfect. K-fold refits anything learned on the training folds only. "
+                                        "Use baseline_mode='fixed' rows for claims: 'fold' re-picks the best single harness "
+                                        "per fold and is itself unstable, which flatters every strategy."),
+        ("Fallback: read the control", "gain_same_harness_retry_pts is what simply rerunning the same harness achieves. Most "
+                                       "triggers are infrastructure crashes, so a switch only earns credit where it beats "
+                                       "that column. For mini-swe-agent it does not."),
+        ("Harness versions", "Phase 1 mixes pi 1.0.0/1.0.1/1.0.2 (terminus-2 2.0.0 and mini-swe-agent 2.4.6 were stable), "
+                             "so 'pi' is not one harness here. Future runs pin the version via run_phase1.sh."),
         ("Column: reward", "1 = task solved, 0 = not solved, blank = run broke before grading, 'sealed' = hidden test result"),
         ("Column: times", "Minutes. env_setup = container start, agent_setup = harness install, agent_run = the agent "
                           "working, verifier = grading."),
@@ -309,6 +378,9 @@ def main():
     add_sheet(wb, "Phase1 runs", runs, {"error_message": 60})
     add_sheet(wb, "Task x harness", task_harness_table(runs, a.unseal))
     add_sheet(wb, "Strategies", strategy_rows(a.unseal))
+    add_sheet(wb, "K-fold", kfold_rows())
+    add_sheet(wb, "Fallback", fallback_rows(), {"triggers": 40, "retry_order": 40})
+    add_sheet(wb, "Task features", feature_rows())
     add_sheet(wb, "Router picks", pick_rows(), {"reason": 80})
     add_sheet(wb, "Failures", failure_rows(runs))
     add_sheet(wb, "Older runs", older_rows(), {"error_message": 60})

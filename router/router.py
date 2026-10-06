@@ -12,6 +12,7 @@ LOG = os.path.join(os.path.dirname(__file__), "router_log.jsonl")
 MODEL = "openrouter/openai/gpt-5.6-luna"
 ROUTER_MODELS = {"luna": "openai/gpt-5.6-luna"}  # OpenRouter models for LLM routing with the hand-written cards
 PROFILE_ROUTERS = {"jev": "jev", "luna-profiles": "luna"}  # pick from Luna's frozen harness profiles (profile_router.py)
+TABLE_ROUTERS = {"jev-table": "jev", "luna-table": "luna"}  # success table in the system prompt (table_router.py)
 HARNESSES = ["terminus-2", "mini-swe-agent", "pi"]
 FALLBACK = "mini-swe-agent"  # best fixed harness on the Qwen 89-task baseline; used when router output is invalid or tied
 
@@ -76,6 +77,18 @@ def classify(s: S) -> S:
         if h not in HARNESSES:  # gate_router also knows opencode (from the Qwen study); this pipeline only runs the 3 above
             h = max(HARNESSES, key=lambda k: proba.get(k, 0.0))
         return {"raw": json.dumps(proba), "votes": {h: 1}, "classify_s": round(time.time() - t, 3)}
+    if s.get("router") == "lookup":
+        from table_router import lookup
+        h, info = lookup(s["task"])
+        return {"raw": json.dumps({"match": info["match"], "table_sha256": info["table_sha256"]}),
+                "votes": {h: 1}, "classify_s": 0.0, "router_tokens": info["tokens"], "router_cost": 0.0}
+    if s.get("router") in TABLE_ROUTERS:
+        from table_router import pick as table_pick
+        h, info = table_pick(s["task"], s["task_text"], TABLE_ROUTERS[s["router"]])
+        return {"raw": json.dumps({"match": info["match"], "reason": info["reason"],
+                                   "underlying_model": info["underlying_model"], "table_sha256": info["table_sha256"]}),
+                "votes": {h: 1} if h else {}, "classify_s": info["seconds"],
+                "router_tokens": info["tokens"], "router_cost": info["cost"]}
     if s.get("router") in PROFILE_ROUTERS:
         from profile_router import pick as profile_pick
         h, info = profile_pick(s["task_text"], PROFILE_ROUTERS[s["router"]])
@@ -157,7 +170,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("tasks", nargs="+")
     ap.add_argument("--execute", action="store_true", help="actually run harbor with the chosen harness")
-    ap.add_argument("--router", default="gemma", choices=["gemma", "gate", *ROUTER_MODELS, *PROFILE_ROUTERS])
+    ap.add_argument("--router", default="gemma", choices=["gemma", "gate", "lookup", *ROUTER_MODELS, *PROFILE_ROUTERS, *TABLE_ROUTERS])
     ap.add_argument("--force", default="", choices=["", "terminus-2", "mini-swe-agent", "pi"], help="skip routing, use this harness")
     ap.add_argument("--tag", default="r")
     ap.add_argument("--cwd", default=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))

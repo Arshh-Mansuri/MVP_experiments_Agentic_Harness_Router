@@ -1,5 +1,10 @@
 # Study plan: does choosing the harness per task improve results?
 
+> **Amendment, 7 Oct 2026:** aligned with the team's problem definition in `PROBLEM_DEFINITION.md`. Changes:
+> k-fold cross-validation replay is now the main evaluation (the development / test split stays as a secondary
+> check); both the cheapest-pass and the stable oracle are reported; rule-based routers (keywords, decision tree,
+> k-NN) and a fallback triggered only by run-time signals are added; the hard-coded lookup is a cache, not a router.
+
 Status: **draft, written before any Phase 1 data is collected.** Once Phase 1 starts, the question, metrics,
 thresholds and test set below are frozen; any later change must be recorded in `PROJECT_LOG.md` with the reason.
 
@@ -93,6 +98,11 @@ All routers are frozen (prompts, rules, model versions recorded) before the test
 | `study/run_phase1.sh` | Runs the queue on Harbor with Luna, skips runs that already have a result, reruns infrastructure failures under a new job name, stops when OpenRouter credit is low |
 | `study/analyze_phase1.py` | Phase 1 table and scores (single harnesses, random, perfect picking, routers) with bootstrap CIs; development go/no-go; test set needs `--unseal` and every unseal is logged |
 | `study/export_experiments.py` | Writes all experiment data to `study/ilab_experiments.xlsx` and `study/ilab_phase1_runs.csv`; test-set rewards stay "sealed" unless `--unseal` (logged) |
+| `study/kfold_eval.py` | Main evaluation: k-fold replay, learned routers fitted on the training folds only; `--baseline fixed` for claims, `--baseline fold` for the deployment view |
+| `study/task_features.py` | Task features from `task.toml` and the instruction; shallow decision tree on best harness and on harness disagreement; writes `study/task_features.csv` |
+| `study/fallback_sim.py` | Fallback simulation triggered only by crashes and agent timeouts, with a same-harness-retry control and extra cost/time per recovered pass |
+| `study/queue_remaining.py` | Queues the 44 tasks Phase 1 did not cover, for full 89-task coverage (`study/phase2_queue.txt`) |
+| `study/run_live_router.sh` | One live Harbor run of a router's choice, harness version pinned; appends to `study/live_runs.jsonl` |
 | `router/harness_research.py` | Luna writes the harness profiles from source code |
 | `router/profile_router.py` | Picks a harness from the frozen profiles (Jev or Luna) |
 | `router/pick_offline.py` | Makes and saves picks for all Phase 1 tasks (`router/picks_profiles.json`) |
