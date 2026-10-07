@@ -11,7 +11,7 @@ research questions) follows the proposal, with the changes listed at the end.
 | Item | Value |
 |---|---|
 | Benchmark | Terminal-Bench (Harbor registry `terminal-bench/<task>`, ref `latest`; exact ref to be recorded, see "Open items") |
-| Tasks | 89 in the benchmark. Luna data so far: 45 tasks (27 development, 18 test), 3 repeats per task and harness |
+| Tasks | 89 in the benchmark. Luna data so far: 45 tasks, 3 repeats per task and harness. These were 27 development + 18 sealed test tasks; the test set was deliberately unsealed on 7 Oct so the deployment lookup could cover all 45, so all 45 are training data now and the remaining 44 are the held-out set |
 | Model (constant) | **GPT-5.6-Luna** via OpenRouter (`openrouter/openai/gpt-5.6-luna`), the same for every run |
 | Harnesses | **terminus-2** (tmux terminal, keystrokes, persistent shell), **mini-swe-agent** (one bash command per step, 30 s command timeout), **pi** (read/write/edit/bash tools, image input, no default command timeout) |
 | Runner | Harbor 0.21.0, Docker, at most 3 runs in parallel |
@@ -93,6 +93,19 @@ problem — of 81 binary feature columns on the 27 development tasks, 2 never fi
 tasks, so only 17 can split at all at `min_samples_leaf=3`, and nearly every `category=` and `tag=` column is a
 singleton. That is an argument for finishing the remaining 44 tasks before concluding the features are useless.
 Nothing meets the +5-point criterion with a CI excluding zero.
+
+**Memorising the 45 tasks is a separate answer.** Hard-coding the best harness for every task Luna has run reaches
+the stable oracle on them by construction: 70.4% against 54.8% for always-mini-swe-agent over all 45, and 63.0%
+against 44.4% on the 18 formerly sealed tasks. That is what `table_router.lookup()` serves in deployment and it is
+the cheapest option measured ($0.0254 per pass). It is also not an answer to RQ2: scored honestly by k-fold over
+the same 45 tasks the lookup only reaches 58.3% (+2.3 [−2.3, +7.6]) against 56.1% for the baseline, while perfect
+picking reaches 72.0% (+15.9 [+8.3, +24.2]). Memorisation is worth having for repeat work and says nothing about an
+unseen task. Testing whether Qwen3-Coder's run could cover unseen tasks gave real but insufficient signal: Luna
+passes 36.3 points more often with a harness Qwen passed with, and Qwen's passer is Luna's best harness 76% of the
+time against 33% by chance, yet as a fallback rule it changes only 5 of 45 picks for +2.2 points [−2.2, +7.4]
+(`study/qwen_vs_luna.py`). It is switched on anyway as a judgement call, because it leans positive, is cheaper per
+pass, and only changes 2 of the 44 unrun tasks. The fallback also skips harnesses that could not install for that
+task in the Qwen run.
 
 **RQ3 — the overhead is not the binding problem; the accuracy is.** Routing costs little ($0.004–$0.17 over 27
 tasks, 0–107 s), but since no router beats the baseline there is no gain to justify. Fallback is a clearer win and

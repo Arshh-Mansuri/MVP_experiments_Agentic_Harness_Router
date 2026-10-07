@@ -11,8 +11,8 @@ from langgraph.graph import StateGraph, START, END
 LOG = os.path.join(os.path.dirname(__file__), "router_log.jsonl")
 MODEL = "openrouter/openai/gpt-5.6-luna"
 ROUTER_MODELS = {"luna": "openai/gpt-5.6-luna"}  # OpenRouter models for LLM routing with the hand-written cards
-PROFILE_ROUTERS = {"jev": "jev", "luna-profiles": "luna"}  # pick from Luna's frozen harness profiles (profile_router.py)
-TABLE_ROUTERS = {"jev-table": "jev", "luna-table": "luna"}  # success table in the system prompt (table_router.py)
+PROFILE_ROUTERS = {"luna-profiles": "luna"}  # pick from Luna's frozen harness profiles (profile_router.py)
+TABLE_ROUTERS = {"luna-table": "luna"}  # success table in the system prompt (table_router.py)
 HARNESSES = ["terminus-2", "mini-swe-agent", "pi"]
 FALLBACK = "mini-swe-agent"  # best fixed harness on the Qwen 89-task baseline; used when router output is invalid or tied
 

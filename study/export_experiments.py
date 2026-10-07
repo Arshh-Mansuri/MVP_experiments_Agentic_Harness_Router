@@ -1,18 +1,17 @@
 """Export all iLab experiment data to one Excel workbook plus a CSV of the Phase 1 runs.
 
-Test-set rewards stay hidden ("sealed") unless --unseal is passed, which is logged to
-study/test_unseal_log.jsonl in the same way as analyze_phase1.py.
+Everything is visible. The Phase 1 test rewards used to be hidden ("sealed") so the 18 test tasks could measure
+generalisation, but they were deliberately unsealed to hard-code the best harness for all 45 tasks in the
+deployment lookup (study/test_unseal_log.jsonl records every unsealing). All 45 are training data now, so there
+is nothing left to seal; the 44 Phase 2 tasks are the held-out set.
 
 Usage:
-  python3 study/export_experiments.py            # dev results visible, test rewards sealed
-  python3 study/export_experiments.py --unseal   # everything visible (logged)
+  python3 study/export_experiments.py
 """
-import argparse
 import collections
 import csv
 import datetime
 import glob
-import hashlib
 import json
 import os
 import re
@@ -28,7 +27,6 @@ MODEL = "openai/gpt-5.6-luna"
 SET_ASIDE_DIR = "jobs_set_aside"
 OUT_XLSX = os.path.join(ROOT, "study", "ilab_experiments.xlsx")
 OUT_CSV = os.path.join(ROOT, "study", "ilab_phase1_runs.csv")
-SEALED = "sealed"
 PASS_GAIN = 5.0
 
 
@@ -89,7 +87,7 @@ def run_row(result_path):
     }
 
 
-def collect_phase1(split, unsealed):
+def collect_phase1(split):
     dev, test = set(split["dev"]), set(split["test"])
     paths = [(p, "") for p in glob.glob(f"{ROOT}/jobs/p1-*/*__*/result.json")]
     paths += [(p, os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(p)))))
@@ -112,12 +110,10 @@ def collect_phase1(split, unsealed):
             counted, why = False, "no reward (run broke before grading)"
         elif task == "qemu-startup":
             counted, why = False, "qemu-startup dropped from scoring (pi/mini-swe-agent cannot install)"
-        sealed = split_name == "test" and not unsealed
         rows.append({
             "job": job, "split": split_name, "task": task, "harness": harness, "repeat": rep,
             "attempt": "first" if attempt == 0 else f"retry {attempt}",
             **{k: v for k, v in row.items() if k not in ("task", "agent")},
-            "reward": SEALED if sealed and row["reward"] is not None else row["reward"],
             "counted_in_scoring": "yes" if counted else "no",
             "not_counted_reason": why,
         })
@@ -125,10 +121,10 @@ def collect_phase1(split, unsealed):
     return rows
 
 
-def task_harness_table(rows, unsealed):
+def task_harness_table(rows):
     cells = collections.defaultdict(list)
     for r in rows:
-        if r["counted_in_scoring"] == "yes" and (r["split"] == "dev" or unsealed):
+        if r["counted_in_scoring"] == "yes":
             cells[(r["split"], r["task"], r["harness"])].append(r)
     out = []
     for (sp, task, h), rs in sorted(cells.items()):
@@ -143,9 +139,9 @@ def task_harness_table(rows, unsealed):
     return out
 
 
-def strategy_rows(unsealed):
+def strategy_rows():
     out = []
-    for sp in (["dev", "test"] if unsealed else ["dev"]):
+    for sp in ("dev", "test"):
         path = f"{ROOT}/study/phase1_results_{sp}.json"
         if not os.path.exists(path):
             continue
@@ -173,23 +169,78 @@ def strategy_rows(unsealed):
 def kfold_rows():
     """Cross-validated scores from study/kfold_eval.py, the main evaluation. 'fixed' is the baseline used for claims."""
     out = []
-    for mode in ("fixed", "fold"):
-        path = f"{ROOT}/study/kfold_results_dev_{mode}.json"
-        if not os.path.exists(path):
-            continue
-        res = load_json(path)
-        for name, s in res["results"].items():
-            out.append({
-                "baseline_mode": mode, "strategy": name, "folds": res["folds"], "seed": res["seed"],
-                "tasks_scored": len(res["tasks"]), "pass_rate_pct": round(s["pass_rate"], 1),
-                "diff_vs_baseline_pts": round(s["diff_mean"], 1),
-                "ci95_low": round(s["ci"][0], 1), "ci95_high": round(s["ci"][1], 1),
-                "headroom_recovered_pct": round(100 * s["headroom_recovered"], 0),
-                "total_cost_usd": round(s["cost"], 4), "cost_per_pass_usd": round(s["cost_per_pass"], 4),
-                "cost_per_pass_change_pct": round(100 * s["cost_per_pass_change"], 1),
-                "routing_cost_usd": round(s["routing_cost"], 4),
-                "meets_pass_criterion": s["meets_pass_criterion"], "meets_cost_criterion": s["meets_cost_criterion"],
-            })
+    for pool in ("all", "dev"):
+        for mode in ("fixed", "fold"):
+            path = f"{ROOT}/study/kfold_results_{pool}_{mode}.json"
+            if not os.path.exists(path):
+                continue
+            res = load_json(path)
+            for name, s in res["results"].items():
+                out.append({
+                    "task_pool": pool, "baseline_mode": mode, "strategy": name,
+                    "folds": res["folds"], "seed": res["seed"],
+                    "tasks_scored": len(res["tasks"]), "pass_rate_pct": round(s["pass_rate"], 1),
+                    "diff_vs_baseline_pts": round(s["diff_mean"], 1),
+                    "ci95_low": round(s["ci"][0], 1), "ci95_high": round(s["ci"][1], 1),
+                    "headroom_recovered_pct": round(100 * s["headroom_recovered"], 0),
+                    "total_cost_usd": round(s["cost"], 4), "cost_per_pass_usd": round(s["cost_per_pass"], 4),
+                    "cost_per_pass_change_pct": round(100 * s["cost_per_pass_change"], 1),
+                    "routing_cost_usd": round(s["routing_cost"], 4),
+                    "meets_pass_criterion": s["meets_pass_criterion"],
+                    "meets_cost_criterion": s["meets_cost_criterion"],
+                })
+    return out
+
+
+def qwen_rows():
+    """study/qwen_vs_luna.py: does the hard-coded lookup reach the oracle, and does Qwen's run predict Luna's?"""
+    path = f"{ROOT}/study/qwen_vs_luna_results.json"
+    if not os.path.exists(path):
+        return []
+    d = load_json(path)
+    out = []
+    labels = [("stable_oracle_pass_rate", "stable oracle (best of 3 harnesses)"),
+              ("lookup45_pass_rate", "lookup, all 45 tasks hard-coded"),
+              ("lookup_dev_only_pass_rate", "lookup, development tasks only (previous)"),
+              ("always_mini_pass_rate", "always mini-swe-agent")]
+    for scope, v in d["verification"].items():
+        for key, label in labels:
+            out.append({"section": "1. lookup vs oracle", "scope": scope, "item": label,
+                        "tasks": v["tasks"], "pass_rate_pct": round(v[key], 1),
+                        "note": "equals the oracle by construction" if key == "lookup45_pass_rate" else ""})
+    for h, verdicts in d["agreement"].items():
+        for verdict in ("pass", "fail", "no signal"):
+            v = verdicts[verdict]
+            out.append({"section": "2. does Qwen predict Luna", "scope": h,
+                        "item": f"Qwen {verdict.upper()}" if verdict != "no signal" else "Qwen gave no signal",
+                        "tasks": v["tasks"], "pass_rate_pct": round(v["luna_pass_rate"], 1),
+                        "note": "Luna pass rate on those tasks"})
+    hit = d["best_harness_hit"]
+    for key, label in (("any_passer", "Qwen passed with any harness"),
+                       ("one_passer", "Qwen passed with exactly one harness")):
+        n, total = hit[key]
+        out.append({"section": "2. does Qwen predict Luna", "scope": "best-harness hit rate", "item": label,
+                    "tasks": total, "pass_rate_pct": round(100 * n / total, 1),
+                    "note": f"{n}/{total} are Luna's best harness; 33.3% by chance"})
+    out.append({"section": "2. does Qwen predict Luna", "scope": "pooled over harness-task pairs",
+                "item": "Luna pass rate, Qwen PASS minus Qwen FAIL", "pass_rate_pct": round(d["pooled_lift_pts"], 1),
+                "note": "points; Qwen carries real signal about Luna"})
+    for mode, m in d["modes"].items():
+        for scope, rules in (("all 45 tasks", m["rules_all_tasks"]),
+                             (f"{d['qwen_acted_tasks']} tasks Qwen could act on", m["rules_qwen_acted"])):
+            for name, s in rules.items():
+                if mode == "loto" and len(m["default_counts"]) > 1:
+                    note = "unstable reference, sensitivity check only"
+                elif name == "first Qwen pass in a fixed order (current)":
+                    note = "the rule lookup() uses (by decision; CI includes 0)"
+                else:
+                    note = "best by the CI rule" if name == d["winner"] else ""
+                out.append({"section": "3. fallback rules", "scope": f"{mode} default, {scope}", "item": name,
+                            "tasks": s["tasks"], "pass_rate_pct": round(s["pass_rate"], 1),
+                            "diff_vs_reference_pts": round(s["diff_vs_reference_pts"], 1),
+                            "ci95_low": round(s["ci95"][0], 1), "ci95_high": round(s["ci95"][1], 1),
+                            "cost_per_pass_usd": round(s["cost_per_pass"], 4),
+                            "tasks_diverted_from_default": s["diverts"], "note": note})
     return out
 
 
@@ -277,13 +328,19 @@ def older_rows():
     return sorted(rows, key=lambda x: (x["started_at"] or "", x["job"]))
 
 
-def notes_rows(split, rows, unsealed):
+def notes_rows(split, rows):
     prof_path = f"{ROOT}/router/harness_profiles.json"
     prof = load_json(prof_path) if os.path.exists(prof_path) else {}
+    table_path = f"{ROOT}/router/success_table.json"
+    table = load_json(table_path) if os.path.exists(table_path) else {}
     luna = [r for r in rows if r["model"] == MODEL]
     return [
         ("Generated", datetime.datetime.now().isoformat(timespec="seconds")),
-        ("Test set", "UNSEALED (logged)" if unsealed else "SEALED: test-set rewards are hidden"),
+        ("Test set", f"UNSEALED. The {len(split['test'])} test tasks were held back to measure generalisation, then "
+                     "deliberately unsealed so the deployment lookup could hard-code the best harness for all "
+                     f"{len(split['dev']) + len(split['test'])} tasks. All of them are training data now and none of "
+                     "them can measure generalisation any more; the 44 Phase 2 tasks are the held-out set. "
+                     "study/test_unseal_log.jsonl records every unsealing."),
         ("Executor model", f"openrouter/{MODEL} (fixed for every run)"),
         ("Harnesses compared", ", ".join(HARNESSES)),
         ("Design", f"{len(split['dev'])} dev + {len(split['test'])} test tasks x {len(HARNESSES)} harnesses x "
@@ -295,8 +352,9 @@ def notes_rows(split, rows, unsealed):
                     "Baseline = best single harness on the dev set. 95% CIs from 10,000 paired bootstrap resamples over tasks."),
         ("Success criteria", "Router beats baseline by >= 5 points with CI above 0, or cuts cost per pass by >= 30% "
                              "while staying within 3 points."),
-        ("Routers", "jev = Jev Router picks using Luna's frozen harness profiles; luna-profiles = Luna picks using the same "
-                    "profiles; luna-cards = Luna picks using the earlier hand-written harness cards."),
+        ("Routers", "jev = Jev Router (typesafe/jev-router) picks using Luna's frozen harness profiles, kept as a record "
+                    "only: that router forwards to other models and was retired on 7 Oct; luna-profiles = Luna picks "
+                    "using the same profiles; luna-cards = Luna picks using the earlier hand-written harness cards."),
         ("Harness profiles", f"frozen={prof.get('frozen')}, sha256={prof.get('profiles_sha256')}"),
         ("Decision: qemu-startup", "Dropped from scoring (decided before unsealing): pi and mini-swe-agent fail their own "
                                    "install step in that task's container; only terminus-2 runs."),
@@ -304,9 +362,25 @@ def notes_rows(split, rows, unsealed):
                                           "in jobs_set_aside/ and rerun. They are listed but not counted."),
         ("Withdrawn", "The earlier Jev-as-picker study (29 Sep) was withdrawn and is not in this file."),
         ("Sheets", "Phase1 runs: one row per attempt | Task x harness: per-cell pass rates | Strategies: single dev/test "
-                   "split | K-fold: cross-validated scores, the main evaluation | Fallback: retry on an observable failure, "
+                   "split | K-fold: cross-validated scores, the main evaluation | Qwen vs Luna: lookup-vs-oracle check "
+                   "and how well a different model's run predicts Luna's | Fallback: retry on an observable failure, "
                    "with the same-harness control | Task features: task.toml metadata and keyword flags | "
                    "Router picks: every pick with reason | Failures: broken attempts by harness | Older runs: pre-study jobs"),
+        ("Deployment lookup", f"router/success_table.json, frozen at sha256={table.get('table_sha256')}, Table A covers "
+                              f"{len(table.get('table_a') or [])} tasks. table_router.lookup() answers those from the "
+                              "table with no model call and reaches the best-of-3-harnesses oracle on them by "
+                              "construction (70.4% pass against 54.8% for always mini-swe-agent). That is memorisation, "
+                              "not generalisation: an unlisted task gets the Qwen fallback or the default harness."),
+        ("Qwen as a fallback hint", "Qwen3-Coder's 89-task run does predict Luna: Luna passes 36.3 points more often "
+                                    "with a harness Qwen passed with, and when Qwen passes at all its harness is Luna's "
+                                    "best one 76% of the time against 33% by chance. But as a fallback rule it only "
+                                    "changes the pick on 5 of the 45 tasks and gains 2.2 points, CI [-2.2, +7.4], so "
+                                    "it is unproven. lookup() uses it anyway as a judgement call: it leans "
+                                    "positive, is cheaper per pass, and changes only 2 of the 44 unrun tasks. "
+                                    "It also skips harnesses that could not install for the task in the Qwen run."),
+        ("K-fold task pools", "task_pool='dev' is the original 27-task evaluation; 'all' adds the unsealed test tasks "
+                              "(44 of 45 - qemu-startup is excluded because only terminus-2 ever ran it, so no strategy "
+                              "has a real choice there)."),
         ("Read K-fold, not Strategies", "Strategies scores one dev/test split and lets a strategy that learned from those "
                                         "same tasks look perfect. K-fold refits anything learned on the training folds only. "
                                         "Use baseline_mode='fixed' rows for claims: 'fold' re-picks the best single harness "
@@ -316,7 +390,7 @@ def notes_rows(split, rows, unsealed):
                                        "that column. For mini-swe-agent it does not."),
         ("Harness versions", "Phase 1 mixes pi 1.0.0/1.0.1/1.0.2 (terminus-2 2.0.0 and mini-swe-agent 2.4.6 were stable), "
                              "so 'pi' is not one harness here. Future runs pin the version via run_phase1.sh."),
-        ("Column: reward", "1 = task solved, 0 = not solved, blank = run broke before grading, 'sealed' = hidden test result"),
+        ("Column: reward", "1 = task solved, 0 = not solved, blank = run broke before grading"),
         ("Column: times", "Minutes. env_setup = container start, agent_setup = harness install, agent_run = the agent "
                           "working, verifier = grading."),
     ]
@@ -346,29 +420,13 @@ def add_sheet(wb, title, rows, widths=None):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--unseal", action="store_true", help="show test-set rewards (logged)")
-    a = ap.parse_args()
     split = load_json(f"{ROOT}/study/phase1_tasks.json")
-
-    if a.unseal:
-        prof = load_json(f"{ROOT}/router/harness_profiles.json")
-        if not prof.get("frozen"):
-            raise SystemExit("harness profiles are not frozen")
-        picks = f"{ROOT}/router/picks_profiles.json"
-        rec = {"ts": datetime.datetime.now().isoformat(timespec="seconds"), "by": "export_experiments.py",
-               "profiles_sha256": prof.get("profiles_sha256"),
-               "picks_sha256": hashlib.sha256(open(picks, "rb").read()).hexdigest()[:16] if os.path.exists(picks) else None}
-        with open(f"{ROOT}/study/test_unseal_log.jsonl", "a") as f:
-            f.write(json.dumps(rec) + "\n")
-        print(f"TEST SET UNSEALED (logged): {rec}")
-
-    runs = collect_phase1(split, a.unseal)
+    runs = collect_phase1(split)
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Notes"
-    for k, v in notes_rows(split, runs, a.unseal):
+    for k, v in notes_rows(split, runs):
         ws.append([k, v])
         ws.cell(row=ws.max_row, column=1).font = Font(bold=True)
         ws.cell(row=ws.max_row, column=2).alignment = Alignment(wrap_text=True, vertical="top")
@@ -376,9 +434,10 @@ def main():
     ws.column_dimensions["B"].width = 110
 
     add_sheet(wb, "Phase1 runs", runs, {"error_message": 60})
-    add_sheet(wb, "Task x harness", task_harness_table(runs, a.unseal))
-    add_sheet(wb, "Strategies", strategy_rows(a.unseal))
+    add_sheet(wb, "Task x harness", task_harness_table(runs))
+    add_sheet(wb, "Strategies", strategy_rows())
     add_sheet(wb, "K-fold", kfold_rows())
+    add_sheet(wb, "Qwen vs Luna", qwen_rows(), {"item": 44, "scope": 36, "note": 48})
     add_sheet(wb, "Fallback", fallback_rows(), {"triggers": 40, "retry_order": 40})
     add_sheet(wb, "Task features", feature_rows())
     add_sheet(wb, "Router picks", pick_rows(), {"reason": 80})
@@ -393,7 +452,7 @@ def main():
             w.writerows(runs)
 
     print(f"wrote {os.path.relpath(OUT_XLSX, ROOT)} and {os.path.relpath(OUT_CSV, ROOT)}: "
-          f"{len(runs)} Phase 1 attempts ({'test unsealed' if a.unseal else 'test rewards sealed'})")
+          f"{len(runs)} Phase 1 attempts, test rewards visible")
 
 
 if __name__ == "__main__":

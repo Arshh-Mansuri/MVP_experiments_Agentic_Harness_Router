@@ -8,8 +8,10 @@ import glob, hashlib, json, os, re, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HARNESSES = ["terminus-2", "mini-swe-agent", "pi"]
-ROUTER_MODELS = {"jev": "typesafe/jev-router", "luna": "openai/gpt-5.6-luna"}
-MAX_TOKENS = 4000  # bounds the cost of one pick, whichever model Jev routes to
+# typesafe/jev-router is not used: it forwards each request to some other model (DeepSeek, GPT-6.1-Sol), so its
+# answers were never Jev's. Jev itself is table_router.decide().
+ROUTER_MODELS = {"luna": "openai/gpt-5.6-luna"}
+MAX_TOKENS = 4000  # bounds the cost of one pick
 TASK_DIRS = [os.path.expanduser("~/.cache/harbor/tasks/packages/terminal-bench/{task}/*/instruction.md"),
              os.path.expanduser("~/.cache/harbor/tasks/*/{task}/instruction.md")]
 
@@ -78,7 +80,7 @@ def parse_json(txt):
         return {}
 
 
-def pick(text, router="jev", key=None):
+def pick(text, router="luna", key=None):
     """Returns (harness or None, info). info records the underlying model that answered, tokens and cost."""
     profiles, digest = load_profiles()
     key = key or os.environ["OPENROUTER_API_KEY"]

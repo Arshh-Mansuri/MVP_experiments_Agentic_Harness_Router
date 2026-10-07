@@ -3,162 +3,224 @@
 Can we improve results on [Terminal-Bench](https://www.tbench.ai/) by sending each task to the agent harness best
 suited to it, instead of always using one harness?
 
-This repo routes each task to one of three harnesses (`terminus-2`, `mini-swe-agent`, `pi`) and runs it on
-[Harbor](https://github.com/laude-institute/harbor), with GPT-5.6-Luna (via OpenRouter) as the model inside every
-harness. **The model never varies; only the harness does.** Every router is compared against the best fixed
-harness, random choice, and the oracle (the best harness per task in hindsight, i.e. perfect routing).
+For each task a **router** picks one of three harnesses (`terminus-2`, `mini-swe-agent`, `pi`), then the task runs in
+that harness on [Harbor](https://github.com/laude-institute/harbor) with **GPT-5.6-Luna** (via OpenRouter) as the
+model. The model never changes; only the harness does.
 
-Most routers here are **blind** - their prompts hold only the task text and facts about how each harness works -
-but two deliberately are not, and the distinction matters when reading results:
+- New here? Start with **[Final run: quick start](#final-run-quick-start)** below.
+- How a run flows end to end: [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md).
+- Rules for coding agents working on the repo: [`AGENTS.md`](AGENTS.md).
+- History, results and open issues: [`PROJECT_LOG.md`](PROJECT_LOG.md). Research design:
+  [`PROBLEM_DEFINITION.md`](PROBLEM_DEFINITION.md), [`STUDY_PLAN.md`](STUDY_PLAN.md).
 
-| Router | Sees past results? |
+---
+
+## Final run: quick start
+
+The final run sends every task through the live pipeline with **Luna as the router and Luna doing the task**:
+
+1. **Route.** The router picks a harness for the task.
+   - For the 45 tasks Luna has already run, the pick comes from the frozen success table, with no model call.
+   - For the 44 new tasks, Luna is asked once, with the frozen routing prompt.
+2. **Run.** Harbor runs the task in Docker with that harness. The harness version is pinned.
+3. **Verify.** The task's own tests score it as a reward of 0 or 1.
+4. **Record.** The result goes to `jobs/`, `study/live_runs.jsonl` and `study/logs/`, and is uploaded to Langfuse.
+
+### What you need
+
+| | |
 |---|---|
-| `--router luna`, `--router gemma`, `--router jev`, `--router luna-profiles` | No. Task text plus harness capability descriptions only. |
-| `--router jev-table`, `--router luna-table` | Yes. The frozen success table is in the system prompt. Scored as a router only with `pick_offline.py --analogy-only`, which removes the task's own row; otherwise a development task is answered from the table and the result is a cache hit, not a routing decision. |
-| `--router lookup` | Yes, entirely. A hard-coded table read with no model call. Reported as a **cache**, never as a router. |
-| `--router gate` | Yes. Trained on Qwen3-Coder reward labels for all 89 tasks. |
+| Machine | macOS or Linux, at least 16 GB RAM, **40 GB or more of free disk** (every task builds its own Docker image) |
+| Docker | [Docker Desktop](https://www.docker.com/products/docker-desktop/), running. Give it at least 8 GB of memory (Settings, Resources) |
+| Python | `python3` 3.9 or newer. On macOS, `xcode-select --install` provides it |
+| uv | `curl -LsSf https://astral.sh/uv/install.sh \| sh`. It installs Harbor and the Langfuse venv |
+| OpenRouter key | Pays for Luna. Budget about **$3** for all 89 tasks (Phase 1 averaged $0.02 per run) |
+| Langfuse keys | Optional. Without them runs still work; they just are not uploaded |
+| Time | About **12 hours** for all 89 tasks, one at a time (median 5 minutes per task, a few take over an hour) |
+
+### 1. Install (once)
+
+```bash
+git clone https://github.com/Arshh-Mansuri/MVP_experiments_Agentic_Harness_Router.git
+cd MVP_experiments_Agentic_Harness_Router
+git config core.hooksPath hooks              # pre-commit hook that blocks commits containing API keys
+
+uv tool install harbor                       # the benchmark runner; we used 0.21.0 (check: harbor --version)
+harbor download terminal-bench --cache       # task instructions and tests into ~/.cache/harbor/tasks
+
+cp .env.example .env                         # then open .env and fill in the keys (see below)
+
+# optional, for Langfuse uploads (the SDK needs Python 3.10+, so it gets its own venv)
+uv venv ~/.venvs/ilab-obs --python 3.12
+uv pip install --python ~/.venvs/ilab-obs/bin/python langfuse==4.17.0
+```
+
+`.env` (never commit it; it is gitignored):
+
+```bash
+OPENROUTER_API_KEY=sk-or-...                    # required
+LANGFUSE_PUBLIC_KEY=pk-lf-...                   # optional
+LANGFUSE_SECRET_KEY=sk-lf-...                   # optional
+LANGFUSE_BASE_URL=https://jp.cloud.langfuse.com
+```
+
+If you use your own OpenAI credits through OpenRouter (BYOK, under Settings, Integrations on openrouter.ai):
+- turn on "Never use shared capacity", so a failing OpenAI key does not silently fall back to OpenRouter credit;
+- after the smoke test below, check that the cost recorded in `study/live_runs.jsonl` is not near zero.
+
+### 2. Check the machine (free)
+
+```bash
+study/preflight.sh                                  # tools, Docker, disk, keys, frozen router files, task cache, Langfuse
+DRY_RUN=1 study/run_live_router.sh fix-git luna     # shows the routing decision and the Harbor command, runs nothing
+```
+
+Fix every `FAIL` line before going on. `warn` lines are fine.
+
+### 3. Smoke test (about 2 minutes, about $0.01)
+
+```bash
+study/run_live_router.sh fix-git luna
+```
+
+It should end with `"reward": 1.0` (or 0.0; fix-git sometimes fails on its own) and a Langfuse URL.
+
+### 4. The final run
+
+```bash
+study/run_final.sh                                  # all 89 tasks: the 44 new ones first, then the 45 known ones
+study/run_final.sh study/final_tasks_unseen.txt     # only the 44 tasks Luna has never run
+study/run_final.sh study/final_tasks_seen.txt       # only the 45 tasks already in the success table
+```
+
+- **Resumable.** If it stops (crash, Ctrl-C, reboot, Docker restart), run the same command again. Tasks that already
+  have a score in this batch are skipped, and tasks that ended with no score are retried.
+- **Keeps the machine awake** on macOS with `caffeinate`. Keep the laptop plugged in and the lid open.
+- **Disk.** If disk runs low part-way, stop it, run `docker system prune -a`, then rerun the same command.
+- **Batch name.** It is `final` by default. A different one starts a fresh batch:
+  `study/run_final.sh study/final_tasks_all.txt final2`.
+
+When it finishes it prints the batch summary (tasks run, passed, total cost) and lists any task with no score.
+
+### 5. Where the results are
+
+| Where | What |
+|---|---|
+| `study/live_runs.jsonl` | One line per run: task, harness, why it was chosen, reward, cost, `batch: final` |
+| `jobs/live-final-luna-<task>-<time>/` | Harbor's full output: trajectories, test results |
+| `study/logs/<job>.log`, `<job>.trace.jsonl` | Harbor's console log, and the timeline of each stage |
+| Langfuse, dashboard "iLab router: live runs" | One trace per run (filter by tag `batch:final`), with pass rate and spend charts |
+
+### 6. Send the results back
+
+The pre-commit hook blocks commits that contain an API key. Agents inside the container can see the key and sometimes
+print it, so scrub first, then push to a branch rather than `main`:
+
+```bash
+python3 study/scrub_secrets.py --apply             # redacts any key that ended up in a run log
+git checkout -b final-run
+git add jobs/live-final-* study/live_runs.jsonl study/logs
+git commit -m "Final run: Luna router, Luna executor"
+git push -u origin final-run
+```
+
+If the laptop cannot push to the repo, zip those same paths and send the zip instead.
+
+---
 
 ## Key findings so far
 
 Measured on 27 development tasks x 3 harnesses x 3 repeats (453 runs, GPT-5.6-Luna throughout), cross-validated in
-[`study/kfold_eval.py`](study/kfold_eval.py). Full statement of the problem and the answers:
+[`study/kfold_eval.py`](study/kfold_eval.py). The full statement of the problem and the answers is in
 [`PROBLEM_DEFINITION.md`](PROBLEM_DEFINITION.md).
 
-- **Harness choice matters, but no router captures it.** Perfect picking reaches 75.3% against 61.7% for always
-  `mini-swe-agent` (+13.6 points [+4.9, +23.5]), yet under 5-fold cross-validation every router lands at or below
-  the baseline: Luna 58.0%, Jev 56.8%, k-NN on task text 51.9-55.6%. Stable across seeds 0, 1 and 2.
-- **Much of the apparent headroom is luck.** Only 50 of 81 task x harness cells give the same result on all three
-  repeats, and the single-run oracle reads 81.5%, i.e. 6.2 points above the stable oracle.
-- **Task metadata carries almost no signal.** A depth-2 tree on `task.toml` fields gets 52% leave-one-out accuracy
-  against 41% for always answering `mini-swe-agent`. 64 of 81 one-hot columns fire on fewer than 3 of the 27 tasks,
-  so most of the feature space cannot split at all. Hand-written keyword rules were dropped for this reason.
-- **Fallback helps, but it is crash recovery rather than routing.** Retrying after an observable failure lifts
-  always-`terminus-2` from 51.9% to 61.7%; retrying the *same* harness gains +8.6 of that, and beats switching
-  outright for `mini-swe-agent` (+2.5 against +1.2).
-- **Cost is the clearer lever.** `terminus-2` costs about 2.2x `mini-swe-agent` over the same tasks without passing
-  more of them. Current recommendation: always `mini-swe-agent` plus a same-harness retry on crash or timeout.
+- **Harness choice matters, but no router captures it.**
+  - Perfect picking reaches 75.3%, against 61.7% for always `mini-swe-agent`: +13.6 points [+4.9, +23.5].
+  - Under 5-fold cross-validation every router lands at or below that baseline:
+    - Luna: 58.0%;
+    - Jev: 56.8%;
+    - k-NN on task text: 51.9–55.6%.
+  - The result is stable across seeds 0, 1 and 2.
+- **Much of the apparent headroom is luck.**
+  - Only 50 of 81 task x harness cells give the same result on all three repeats.
+  - The single-run oracle reads 81.5%, which is 6.2 points above the stable oracle.
+- **Task metadata carries almost no signal.**
+  - A depth-2 tree on `task.toml` fields gets 52% leave-one-out accuracy, against 41% for always `mini-swe-agent`.
+- **Fallback helps, but it is crash recovery rather than routing.**
+  - Retrying after an observable failure lifts always-`terminus-2` from 51.9% to 61.7%.
+  - Retrying the *same* harness accounts for +8.6 points of that.
+- **Cost is the clearer lever.**
+  - `terminus-2` costs about 2.2x as much as `mini-swe-agent` on the same tasks, without passing more of them.
+- **Memorising beats routing on tasks we have already run.**
+  - The success table hits the best-of-3 ceiling on the 45 known tasks: 70.4%, against 54.8% for always
+    `mini-swe-agent`.
+  - That is a cache, not a router. Cross-validated, the same approach reaches only 58.3%.
+  - So the 44 new tasks are where the final run actually tests routing.
 
-Earlier write-ups: [`PROJECT_LOG.md`](PROJECT_LOG.md) (findings, errors, fixes, open issues) and
-[`GPT-5.6-LUNA-BENCHMARK-RESULTS.md`](GPT-5.6-LUNA-BENCHMARK-RESULTS.md) (September per-experiment notes, now
-superseded - its early conclusions are contradicted by the 453-run study).
+## Routers
 
-## The test set is sealed
+| Router | Where | Sees past results? |
+|---|---|---|
+| `luna` | live (`study/run_live_router.sh`, `study/run_final.sh`) | Yes: known tasks come from the frozen success table, other tasks go to Luna with the table in its prompt |
+| `jev` | live | Same table; new tasks go to Jev (`~typesafe/jev-latest`) through OpenRouter's decisions endpoint |
+| `--router luna`, `gemma`, `luna-profiles` | `router/router.py` (older) | No: task text plus harness descriptions only |
+| `--router luna-table` | `router/router.py` | Yes, the success table in the prompt; scored only with `pick_offline.py --analogy-only` |
+| `--router lookup` | offline tools | Yes, entirely: a table read with no model call, reported as a cache |
+| `--router gate` | `router/router.py` | Yes: TF-IDF classifier trained on the Qwen3-Coder results |
 
-18 of the 45 tasks are a held-out test set. Scoring or printing their rewards requires `--unseal`, and every such
-command appends to [`study/test_unseal_log.jsonl`](study/test_unseal_log.jsonl) so each look is on record. This
-applies to `study/analyze_phase1.py`, `study/kfold_eval.py`, `study/fallback_sim.py`, `study/task_features.py`,
-`study/export_experiments.py` and `router/outcomes.py`.
+`typesafe/jev-router` is not used. It forwards each request to other models (DeepSeek, GPT-6.1-Sol), so its answers
+were never Jev's own. Its old picks stay in `router/picks_profiles.json` as a record.
+
+The 45 Phase 1 tasks were once split into development and held-out test tasks. The seal was broken on purpose on 7 Oct
+so that the table covers all 45 tasks. Since then, only the 44 Phase 2 tasks measure generalisation. `--unseal` still
+logs to `study/test_unseal_log.jsonl`, so the before-and-after numbers can be reproduced.
 
 ## Repository layout
 
 | Path | What it is |
 |---|---|
-| `router/router.py` | Main router (LangGraph): load task, classify, validate, run on Harbor, log |
-| `router/router2.py` | Harness descriptions, decision rules and Luna pick/scoring functions shared by all routers |
-| `router/gate_router.py` | TF-IDF + logistic regression router trained on the Qwen 89-task baseline (`--router gate`) |
-| `router/cv_gate.py` | Leave-one-out evaluation of classifier routers on the Qwen data |
-| `router/profile_router.py` | Picks a harness from the frozen harness profiles (Jev or Luna) |
-| `router/table_router.py` | Picks from the frozen success table; also the hard-coded `lookup` cache |
-| `router/build_success_table.py` | Builds the frozen `success_table.json` (refuses to include test tasks) |
-| `router/pick_offline.py` | Makes and stores router picks without running Harbor |
-| `router/prompt_iterations.py` | Compares router prompt designs offline (no Harbor runs) |
-| `router/outcomes.py` | Task x harness reward table from `jobs/`; prints development tasks unless `--unseal` |
-| `router/archive_watchdog/` | Early-stopping watchdog experiment (dropped) |
-| `router/*.jsonl`, `router/*results*.json` | Routing logs and experiment results |
-| `jobs/` | Harbor job outputs (configs, trajectories, verifier results) for every run |
-| `study/` | Task selection, run queues, and the analysis scripts (see `STUDY_PLAN.md` section 6) |
-| `archive/` | Dead and duplicate files kept for the record; nothing live depends on them |
+| `study/run_final.sh` | The final run: a task list through the live pipeline with Luna, resumable |
+| `study/preflight.sh` | Free readiness check for a machine |
+| `study/final_tasks_*.txt` | Task lists: `all` (89), `unseen` (44 new), `seen` (45 known) |
+| `study/run_live_router.sh` | One live run: route, Harbor, record, Langfuse upload |
+| `study/langfuse_export.py`, `study/langfuse_dashboard.py` | Run to Langfuse trace; the Langfuse dashboard definition |
+| `router/table_router.py` | The live router: `pick()` (Luna), `decide()` (Jev), `lookup()` (no model, offline only) |
+| `router/success_table.json`, `router/table_system_prompt.txt` | Frozen table and routing prompt, checked by hash |
+| `router/profile_router.py` | Harness list, task text loading, the OpenRouter call |
+| `router/build_success_table.py` | Rebuilds and re-freezes the table and prompt (changes `table_sha256`) |
+| `router/router.py`, `router/pick_offline.py` | Older LangGraph pipeline and offline pick replays |
+| `study/run_phase1.sh`, `study/kfold_eval.py`, `study/analyze_phase1.py` | Phase 1 runs and their evaluation |
+| `study/scrub_secrets.py`, `hooks/pre-commit` | Secret redaction and the commit guard |
+| `jobs/` | Harbor output, one folder per job (`p1-*` Phase 1, `live-*` live runs) |
+| `study/logs/` | Per-run Harbor log and trace timeline, Langfuse upload ledger |
+| `archive/` | Dead code and old data kept for the record |
 | `Qwen_89_Task_Comparison_2026-09-20.xlsx` | Qwen3-Coder 480B baseline: 89 tasks x 4 harnesses |
 
-## Setup
-
-Requirements: Python 3.12, [Harbor](https://github.com/laude-institute/harbor) CLI, Docker Desktop (running), an
-OpenRouter API key, and [Ollama](https://ollama.com/) with `gemma3:270m` only if you use the Gemma router.
+## Research commands
 
 ```bash
-cd router
-python3 -m venv .venv
+python3 router/table_router.py --explain fix-git   # why a task goes to its harness (no API call)
+python3 study/kfold_eval.py --baseline fixed       # main cross-validated evaluation of saved runs
+python3 study/analyze_phase1.py                    # single development/test split
+python3 study/export_experiments.py                # writes study/ilab_experiments.xlsx
+~/.venvs/ilab-obs/bin/python study/langfuse_export.py jobs/<job> --dry-run   # preview a Langfuse trace
+~/.venvs/ilab-obs/bin/python study/langfuse_dashboard.py --check             # test the dashboard queries
+```
+
+The older LangGraph pipeline needs its own venv:
+
+```bash
+cd router && python3 -m venv .venv
 .venv/bin/pip install langchain-openai langchain-ollama langgraph pandas openpyxl scikit-learn
 ```
 
-Create `.env` in the repo root (it is gitignored, never commit it):
-
-```bash
-OPENROUTER_API_KEY=sk-or-...
-```
-
-Load it before any run:
-
-```bash
-set -a; . ./.env; set +a; export OPENROUTER_API_KEY
-```
-
-Enable the credential hook. `core.hooksPath` is local config, so a fresh clone has to set it once:
-
-```bash
-git config core.hooksPath hooks
-```
-
-This matters because the key reaches the harnesses that run inside the container (`mini-swe-agent`, `pi`), so a
-task that tells the agent to hunt for a password will make it dump `env` into a transcript we commit — which is
-how two keys ended up in a public commit (see `PROJECT_LOG.md` section 3f). The hook refuses such a commit;
-`python3 study/scrub_secrets.py --apply` redacts artefacts that already contain one.
-
-Terminal-Bench tasks are read from Harbor's cache (`~/.cache/harbor/tasks/`); download them with
-`harbor download terminal-bench --cache`.
-
-## Usage
-
-Run from the repo root.
-
-```bash
-# Route only (no execution): prints the pick for each task
-router/.venv/bin/python router/router.py --router luna fix-git count-dataset-tokens
-
-# Route and run on Harbor (results go to jobs/, a log line to router/router_log.jsonl)
-caffeinate -i router/.venv/bin/python router/router.py --router luna fix-git --execute --cwd .
-
-# Skip routing and force a harness
-router/.venv/bin/python router/router.py --force pi fix-git --execute --cwd .
-
-# The study: run the queue, then score it (no Harbor runs needed for scoring)
-study/run_phase1.sh                          # harness versions are pinned inside the script
-python3 study/kfold_eval.py --baseline fixed # main evaluation, cross-validated
-python3 study/analyze_phase1.py              # single development/test split, secondary
-python3 study/fallback_sim.py --crashes count
-python3 study/task_features.py
-python3 study/export_experiments.py          # study/ilab_experiments.xlsx
-
-# One live run of a router's choice
-study/run_live_router.sh count-dataset-tokens lookup
-
-# Older offline evaluations
-cd router
-python cv_gate.py
-python prompt_iterations.py --reps 2
-```
-
-Routers: `--router jev` (Luna researches the harnesses, Jev picks: OpenRouter's `typesafe/jev-router` chooses
-from the frozen harness profiles in `router/harness_profiles.md`, which Luna wrote from the harness source code),
-`--router luna-profiles` (Luna picks from the same profiles), `--router luna` (Luna with hand-written harness
-descriptions), `--router gemma` (local Gemma 270M, votes over all harness orderings), `--router gate`
-(TF-IDF classifier, no LLM cost), `--router jev-table` / `--router luna-table` (same models with the frozen
-success table in the prompt), `--router lookup` (hard-coded table read, no model call). The last three see past
-results; see the table at the top.
-
 ## Known issues
 
-- If the project lives in an iCloud-synced folder (e.g. Desktop), macOS may offload venv files and Python can take
-  many minutes to start. Mark the folder "Keep Downloaded" or keep the venv outside iCloud.
-- The OpenRouter key has returned 401 since 7 Oct, which blocks every LLM router and all new Harbor runs.
-- Phase 1 runs mix `pi` 1.0.0, 1.0.1 and 1.0.2, so "pi" is not a single harness in that data. New runs pin the
-  version (`V_PI` in `study/run_phase1.sh`).
-- 44 of the 89 tasks have no Luna runs yet; the queue is ready in `study/phase2_queue.txt`.
-
-More in [`PROJECT_LOG.md`](PROJECT_LOG.md).
-
-## Next steps
-
-Fill in the remaining 44 tasks, then test a `mini-swe-agent`-first router that only diverts on strong evidence,
-since every router so far loses by over-diverting. Also worth doing: package the router as a single Harbor agent
-(meta-harness), and confirm the live path end to end with `study/run_live_router.sh`.
+- **Keys inside run logs.** The OpenRouter key reaches the harnesses inside the container, and agents sometimes dump
+  `env` into transcripts. The hook refuses such commits; `python3 study/scrub_secrets.py --apply` redacts them.
+- **The `less` pager trap.** `terminus-2` on fix-git sometimes gets stuck in git's `less` pager and fails. This is a
+  known harness risk, not a pipeline bug.
+- **iCloud folders.** If the repo lives in an iCloud-synced folder, macOS may offload venv files, and Python can then
+  take minutes to start. Keep venvs outside iCloud.
+- **Mixed `pi` versions.** Phase 1 runs mix `pi` 1.0.0, 1.0.1 and 1.0.2. Live runs pin terminus-2 2.0.0,
+  mini-swe-agent 2.4.6 and pi 1.0.1.

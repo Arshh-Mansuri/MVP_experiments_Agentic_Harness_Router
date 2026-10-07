@@ -45,6 +45,188 @@ never past benchmark results.
 
 ---
 
+## 3h. 7 Oct 2026 (evening): ready for the final run
+
+The final run uses Luna as both the router and the executor, over all 89 tasks. The 45 known tasks come from the
+table; the 44 new ones each get one Luna routing call. It will run on another laptop, so the setup is now
+self-contained:
+- `study/run_final.sh [list] [batch]` runs a task list through `study/run_live_router.sh <task> luna`. It is
+  resumable: tasks already scored in the batch are skipped, and tasks with no reward are retried. It prints a batch
+  summary at the end.
+- `study/preflight.sh` is a free readiness check: tools, Docker, disk, `.env` names, frozen hashes, task cache,
+  Langfuse auth, the pre-commit hook.
+- Task lists: `study/final_tasks_{all,unseen,seen}.txt` (89, 44, 45).
+- `.env.example` is a template for the keys.
+- The live runner takes `BATCH=<name>`. The name goes into the job name (`live-final-luna-…`), into the
+  `study/live_runs.jsonl` row (with `route_cost` now included) and into the Langfuse tag `batch:<name>`.
+- README rewritten around a fresh-machine quick start.
+
+Estimate from Phase 1: 8.4 minutes and $0.02 per run on average, so about 12 hours and $2–3 for 89 tasks one at a
+time.
+
+## 3g. Session log: 7 Oct 2026 — test set unsealed, lookup covers all 45 tasks
+
+Goal: get the deployment path to the best-of-3-harnesses number on the tasks we have run, then see what can be
+built on top. The decision taken first, deliberately and on the record: unseal the 18 test tasks and hard-code
+all 45. The seal bought a generalisation measurement; a lookup that covers only 27 of 45 tasks buys nothing.
+**All 45 Luna tasks are lookup training data now. The remaining 44 Phase 2 tasks are the held-out set.**
+
+### The table
+`build_success_table.py` gained `--include-test`, which logs to `study/test_unseal_log.jsonl` like every other
+unsealing. Table A went from 27 rows to 45 (`sha256 c7f5166b6d395def`) with a `split` field per row. The builder
+also stopped duplicating the pick logic: it now calls `analyze_phase1.stable_pick`, so the table and the oracle it
+is measured against cannot drift apart. That refactor changed **0 of the 27 development picks**, so earlier numbers
+still stand. One silent bug fixed on the way: `QWEN_XLSX` still pointed at the repository root after the workbook
+was moved to `archive/` in the 3e cleanup, so the builder had been unable to build Table B at all.
+
+### The lookup reaches the ceiling, and that is not a routing result
+| Scope | Stable oracle | Lookup, 45 hard-coded | Lookup, development only | Always mini-swe-agent |
+|---|---|---|---|---|
+| all 45 tasks | 70.4% | **70.4%** | 63.7% | 54.8% |
+| the 18 formerly sealed tasks | 63.0% | **63.0%** | 46.3% | 44.4% |
+
+Equal to the oracle by construction, and `study/qwen_vs_luna.py` asserts it rather than assuming it. Unsealing is
+worth +6.7 points over the development-only lookup across 45 tasks [+1.5, +13.3] and +16.7 on the 18 [+5.6, +31.5].
+Cost per pass is the lowest of any strategy at $0.0254.
+
+This is memorisation. Scored honestly by k-fold over the same 45 tasks (`--tasks all --unseal --baseline fixed`,
+44 scored, `qemu-startup` excluded because only terminus-2 ever ran it) the lookup reaches 58.3% (+2.3 [−2.3,
++7.6]) against 56.1% for the baseline, while perfect picking reaches 72.0% (+15.9 [+8.3, +24.2]). Every learned and
+LLM router is still at or below the baseline. The headroom is real, larger than on the development set alone, and
+nothing generalising has captured any of it.
+
+### Qwen predicts Luna, but cannot carry the fallback
+Qwen3-Coder's 89-task run is a different model, so using it is not leakage. It does carry signal:
+
+| Harness | Luna pass rate where Qwen passed | where Qwen failed |
+|---|---|---|
+| terminus-2 | 69.4% (n=12) | 47.9% (n=32) |
+| mini-swe-agent | 83.3% (n=16) | 42.0% (n=27) |
+| pi | 86.7% (n=10) | 40.4% (n=33) |
+
+Pooled, Luna passes 36.3 points more often with a harness Qwen passed with, and when Qwen passes at all its harness
+is Luna's best one 16/21 times (76% against 33% by chance). But Qwen passed with none of our harnesses on 24 of 45
+tasks, so the rule can rarely act: it changes 5 of 45 picks for +2.2 points [−2.2, +7.4]. Below the +5-point
+criterion and the CI includes zero, so `lookup()` step 2 was first set to the plain default harness. **Revised the
+same day by decision:** the evidence leans positive (76% best-harness hit, cheaper per pass) and the rule only
+touches 2 of the 44 unrun tasks (`compile-compcert` -> pi, `vulnerable-secret` -> terminus-2), so `lookup()` now
+uses it by default (`use_qwen=False` turns it off). It is on as a judgement call, not a proven gain. All three
+candidate rules scored identically, which is not a bug: with a mini-swe-agent-first default and ranking, "first in
+a fixed order", "divert only if the default failed" and "best-ranked passer" are the same function.
+
+`lookup()` also skips, for unrun tasks, any harness that failed to install in that task's container in the Qwen
+run ("Setup exit 100", read from `router/difficulty_table.json`). The signal transfers: on `qemu-startup` the same
+two harnesses then crashed on all 9 of Luna's attempts. It moves `qemu-alpine-ssh` from mini-swe-agent to
+terminus-2 and touches nothing else.
+
+### Table router system prompt rewritten
+`router/table_system_prompt.txt` (used by `--router jev-table` / `luna-table` for tasks outside Table A) was rewritten
+in `table_router.build_system_prompt`. The old prompt listed only each known task's winner and score, so a 3-way tie
+such as `fix-git -> terminus-2 (3/3)` read like a terminus-2 speciality, and it told the model to copy the harness of
+any similar task. Of the 45 known tasks only 2 have a clear winner (by 2+ runs), 18 lean by one run, 19 are ties and
+6 are unsolved. The new prompt shows all three scores per task grouped by that strength, states measured pass rates
+and costs, and gives ordered rules that match `lookup()`: skip harnesses that cannot install, follow a Qwen pass
+that excludes mini-swe-agent, follow similar tasks only when the evidence is CLEAR (or two LEAN tasks agree) and the
+similarity is in what separates harnesses rather than topic, else mini-swe-agent. Same JSON reply format.
+**Not yet evaluated:** earlier scores for the table routers were measured with the old prompt; rerun
+`pick_offline.py --analogy-only` for jev-table and luna-table (needs the API key) before quoting any.
+
+### Tracing the routing decision
+Every routing call now records its steps. `lookup()` and `pick()` return `info["trace"]`, a list of steps (which rule
+fired, the Table A scores with cost and tie-break, the setup check, Qwen's results, the decision; for the LLM router
+also the prompt sha, model reply, tokens and cost). `ROUTER_LOG=info` (or `debug`, which adds the full prompt and raw
+reply) prints those steps to stderr as they happen; API retries log as warnings either way when enabled.
+`python3 router/table_router.py --explain TASK` prints the lookup decision with no API call.
+`study/run_live_router.sh` writes a timeline per run to `study/logs/<job>.trace.jsonl` (start, route with the trace,
+harbor_start, harbor_end with exit code and seconds, result with reward, exception, agent steps, tokens, cost and
+minutes per stage) and writes `live_runs.jsonl` with proper JSON escaping. Its `jev-table`/`luna-table` branch was
+broken (it passed a task argument `pick_offline.py` does not accept); it now calls `table_router.pick` directly.
+No secrets are logged.
+
+### Jev itself as a router (`jev-decide`)
+`typesafe/jev-router` forwards each request to another model (DeepSeek V4.1 Flash on 7 Oct, GPT-6.1-Sol in the
+offline evaluation), so "Jev" answers were never Jev's. Jev itself, `~typesafe/jev-latest`, cannot use chat
+completions; it answers structured questions on `/api/alpha/decisions` (`state` + a `choice` question with
+`criteria`) and returns a probability per option. `table_router.decide()` gives it the frozen system prompt plus
+the task as `state`; `run_live_router.sh <task> jev-decide` uses it. First live run, nginx-request-logging (not in
+Table A): Jev chose mini-swe-agent at 0.92 (terminus-2 0.06, pi 0.02), answered by `typesafe/jev-1.13-20260917`
+in 0.6 s for $0.0002, about 8x cheaper than the jev-router call; Luna then passed (reward 1, $0.0030). One run,
+not an evaluation.
+
+`typesafe/jev-router` is now removed from every code path (`profile_router.ROUTER_MODELS`, the `jev` and
+`jev-table` options in `router.py`, `pick_offline.py` and `run_live_router.sh`; `pick()` defaults to Luna). Its
+past picks and the one live `jev-table` run stay on disk as records. Jev is only called as itself, via `jev-decide`.
+
+Live runs now have exactly two routers, `study/run_live_router.sh <task> luna|jev` (default `luna`); the executor is
+always Luna. Both answer a Table A task from the table with no model call; any other task goes to the router model
+with the frozen prompt (`luna` = `table_router.pick`, `jev` = `table_router.decide`, formerly `luna-table` and
+`jev-decide`). The standalone `lookup` option is gone: its Table A step is in both, and its Qwen-based fallback for
+unknown tasks is replaced by the router model's decision. Earlier jobs keep their old names (`live-lookup-*`,
+`live-jev-decide-*`).
+
+### Langfuse traces of live runs
+`study/langfuse_export.py` turns a finished live run into one Langfuse trace, built only from files the run left
+behind, so it changes nothing about the run. `run_live_router.sh` calls it at the end and records the link as an
+`observability` event; a failed upload never fails the run. Scope is live runs only: the benchmark data stays in
+`jobs/` and the workbook, and nothing in Langfuse feeds back into the table (offline rule).
+
+Layout, with names kept stable for dashboards: `solve-task` (input: task instruction; output: harness, reward,
+tests, cost) contains `route-task` (the lookup, or the router call with prompt, reply, model, tokens and cost; Jev's
+option probabilities included), `set-up-environment`, the harness as an agent (`install-harness`, then one
+`decide-next-action` generation per Luna call with thinking, tokens split into cached/reasoning, and cost, and its
+tool calls as siblings, grouped into one observation per tool name per model call because every observation is
+a billed unit: terminus-2 made 32 command batches in 11 steps on one fix-git run, so grouping took that trace from
+52 units to 32; typical runs are 17–23 units, about 2,000 runs a month on the free plan), and `verify-solution` with per-test results (WARNING when reward < 1). Scores: `reward`,
+`tests_passed`. Session = task name, so repeats of one task line up; tags `router:`, `harness:`, `match:`;
+environment `live`. Spans go over OpenTelemetry (`/api/public/otel/v1/traces`, ingestion version 4), the only path
+that keeps the original timestamps. Text is clipped at 20,000 characters and run through `scrub_secrets` first.
+Run logs ride along as metadata (no extra units), last 8,000 characters with colour codes stripped: `log_harbor`
+(Harbor's job.log and trial.log) and `log_exception` on `solve-task`, `log_console` (terminus-2 pane or mini-swe-agent
+output) on the harness, `log_pytest` on `verify-solution`.
+
+Checked by reading the traces back (Observations API v2, Scores API v3): the six live runs give 120 observations
+and 12 scores. Luna cost sums to $0.022122, the same as Harbor's, and prompt tokens match per run. All child
+observations carry session, tags and trace name. Things learned:
+- Langfuse v4 does not deduplicate a span sent twice; re-sending nginx produced 28 observations instead of 14.
+  The exporter now sends each job once (ledger `study/logs/langfuse_sent.jsonl`); `--replace` deletes the old trace
+  and sends under new ids.
+- Trace-wide attributes must be on every span, not only the root, or child observations cannot be filtered.
+- This org (created after 16 Sep 2026) cannot use the legacy read APIs (`/api/public/traces`); reads go through
+  `/api/public/v2/observations` and `/api/public/v3/scores`.
+- Timing inside the agent comes from step timestamps, so a generation spans from the previous step to its own, and
+  its tool calls sit at its end. pi's session log was parsed on a saved Phase 1 run (7 generations, 11 tool calls,
+  cost matches) but no pi live run exists yet.
+
+### Langfuse MCP and dashboard
+Cursor is connected to Langfuse's MCP server (`.cursor/mcp.json`, gitignored). `study/langfuse_dashboard.py`
+creates the dashboard "iLab router: live runs" through the same server: 15 widgets covering runs, pass rate,
+spend (total, routing, by model, by task, per day), pass rate and Luna calls per configuration, runs and failures
+by task, stage durations, failed commands by tool and Luna's token mix. Every query was checked first
+(`--check`); on 7 runs it shows a 71% pass rate (fix-git 3 of 5), $0.032 total spend of which $0.0017 routing.
+
+### Difficulty gauge from the Qwen workbook
+`router/difficulty.py` rates all 89 tasks easy / medium / hard / very hard from Qwen's results (no fitting). Luna's
+pass rate falls with every tier: 94%, 58%, 42%, 36% over the 44 scored tasks. Crashed Qwen trials are not counted
+as evidence. It also gives an expected Luna cost per run from Qwen's token use (Spearman 0.74 with Luna's cost,
+28% off on a split-half check). It reports difficulty only; it does not choose the harness.
+
+### An unstable baseline nearly produced a false positive
+Scored leave-one-task-out, the same Qwen rule looked like **+10.4 points [+4.4, +17.0]** — a clean win. It was an
+artefact. Over 45 tasks the three harnesses are nearly tied (terminus-2 54.1%, mini-swe-agent 54.8%, pi 51.1%), so
+the leave-one-out "best single harness" flips between mini-swe-agent (31 tasks) and terminus-2 (14), and it flips
+*against* the withheld task: dropping a task mini-swe-agent solved is exactly what lets terminus-2 win the average.
+The reference therefore scores 42.2%, worse than any fixed harness, and flatters everything compared against it.
+`kfold_eval.py` already warned about this for `--baseline fold`; the new script now reports both and makes claims
+only on `fixed`. Worth remembering as a general hazard: when candidates are within noise of each other, a baseline
+refitted per fold is anti-correlated with the held-out item.
+
+### Also
+- `export_experiments.py` dropped `--unseal` (nothing left to seal), gained a **Qwen vs Luna** sheet, and the
+  K-fold sheet gained a `task_pool` column so the 27-task and 45-task evaluations sit side by side.
+- `README.md`, `STUDY_PLAN.md` and `PROBLEM_DEFINITION.md` now state that the 45 tasks are training data.
+
+---
+
 ## 3f. Session log: 7 Oct 2026 — OpenRouter key leaked through a run artefact
 
 ### What happened
@@ -560,12 +742,19 @@ The study design is in `STUDY_PLAN.md` (question, success thresholds, developmen
 18 test tasks, none run before) and a 405-run queue. Phase 1 finished on 5 Oct (see 3b).
 
 Next:
-1. Decide whether to score the test set now (`python3 study/analyze_phase1.py --split test --unseal`, then
-   `python3 study/export_experiments.py --unseal`). The routers are already frozen.
-2. Given the development result (headroom exists, routers don't find it), consider cost-aware routing or a
-   router that defaults to `mini-swe-agent` and only switches on strong evidence, designed on the development set
-   only.
-3. Run the best router live on the 18 test tasks (3 repeats) to confirm the offline estimate.
+1. ~~Decide whether to score the test set now~~ — done on 7 Oct (see 3g): scored, then unsealed on purpose so the
+   lookup could cover all 45 tasks. Those 45 are training data now, which makes the **remaining 44 Phase 2 tasks
+   the only held-out set left**. Nothing fitted on the 45 may be tuned again before Phase 2 runs.
+2. Run Phase 2: the 44 unrun tasks x 3 harnesses x 3 repeats, with the harness versions pinned. It is the only
+   way left to answer RQ2, and it also doubles the sample for the feature analysis, which is currently starved
+   (64 of 81 one-hot columns fire on fewer than 3 tasks).
+3. Given the development result (headroom exists, routers don't find it), consider cost-aware routing or a
+   router that defaults to `mini-swe-agent` and only switches on strong evidence — designed before Phase 2 runs,
+   not after.
+4. Check the Qwen fallback, now on by default, against Phase 2: compare each of the 2 diverted tasks
+   (`compile-compcert`, `vulnerable-secret`) with mini-swe-agent's result there. On the 45 it was +2.2 points
+   [−2.2, +7.4]; if Phase 2 goes against it, set `use_qwen=False`.
+5. Run the best router live on a sample of Phase 2 tasks (3 repeats) to confirm the offline estimate.
 
 Older ideas:
 

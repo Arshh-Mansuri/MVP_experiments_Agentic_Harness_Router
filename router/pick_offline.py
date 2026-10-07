@@ -1,18 +1,16 @@
-"""Make profile-based picks for every Phase 1 task without running Harbor.
+"""Make picks for every Phase 1 task without running Harbor.
 
-Both routers see the same frozen profiles and task text; only the picking model differs:
-  jev           typesafe/jev-router (the router under test)
-  luna-profiles openai/gpt-5.6-luna (comparison, isolates the effect of the profiles from the effect of Jev)
+  luna-profiles openai/gpt-5.6-luna with Luna's frozen harness profiles
   luna-cards    the existing Luna router: hand-written cards + rules (router2.V1_PROMPT), no profiles
-  jev-table     Jev with the frozen success table (table_router.py): Luna dev results + Qwen 89 as a weak hint
-  luna-table    Luna with the same success table
+  luna-table    Luna with the frozen success table (table_router.py): Luna dev results + Qwen 89 as a weak hint
   lookup        hard-coded: Table A best harness for known tasks, mini-swe-agent otherwise (no model call)
+typesafe/jev-router is not used (it forwards to other models); picks_profiles.json still holds its old 'jev'/'jev-table' rows.
 
-On a development task the table routers answer straight from the table, so those picks are cache hits rather than
+On a development task the table router answers straight from the table, so those picks are cache hits rather than
 routing decisions. --analogy-only removes the task's own row and the exact-match rule, which is the only form worth
-scoring as a router; such picks are stored under a separate name (jev-table-analogy) so the two can never be mixed.
+scoring as a router; such picks are stored under a separate name (luna-table-analogy) so the two can never be mixed.
 
-usage: python router/pick_offline.py [--routers jev luna-profiles] [--reps 2] [--split dev|test|all] [--analogy-only]
+usage: python router/pick_offline.py [--routers luna-profiles lookup] [--reps 2] [--split dev|test|all] [--analogy-only]
 writes router/picks_profiles.json (appends new picks; existing (router, task, rep) entries are kept)
 """
 import argparse, json, os, sys
@@ -22,8 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import profile_router as pr
 
-NAMES = {"jev": "jev", "luna-profiles": "luna", "luna-cards": "luna", "jev-table": "jev", "luna-table": "luna",
-         "lookup": None}
+NAMES = {"luna-profiles": "luna", "luna-cards": "luna", "luna-table": "luna", "lookup": None}
 OUT = os.path.join(HERE, "picks_profiles.json")
 
 

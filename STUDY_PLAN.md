@@ -97,8 +97,9 @@ All routers are frozen (prompts, rules, model versions recorded) before the test
 | `study/select_tasks.py` | Samples tasks with a fixed seed, makes the development / test split, writes `study/phase1_tasks.json` and the run queue `study/phase1_queue.txt` |
 | `study/run_phase1.sh` | Runs the queue on Harbor with Luna, skips runs that already have a result, reruns infrastructure failures under a new job name, stops when OpenRouter credit is low |
 | `study/analyze_phase1.py` | Phase 1 table and scores (single harnesses, random, perfect picking, routers) with bootstrap CIs; development go/no-go; test set needs `--unseal` and every unseal is logged |
-| `study/export_experiments.py` | Writes all experiment data to `study/ilab_experiments.xlsx` and `study/ilab_phase1_runs.csv`; test-set rewards stay "sealed" unless `--unseal` (logged) |
+| `study/export_experiments.py` | Writes all experiment data to `study/ilab_experiments.xlsx` and `study/ilab_phase1_runs.csv`; shows everything, since the test set is unsealed |
 | `study/kfold_eval.py` | Main evaluation: k-fold replay, learned routers fitted on the training folds only; `--baseline fixed` for claims, `--baseline fold` for the deployment view |
+| `study/qwen_vs_luna.py` | Checks the 45-task lookup against the oracle and tests whether Qwen3-Coder's run predicts Luna's well enough to drive the fallback |
 | `study/task_features.py` | Task features from `task.toml` and the instruction; shallow decision tree on best harness and on harness disagreement; writes `study/task_features.csv` |
 | `study/fallback_sim.py` | Fallback simulation triggered only by crashes and agent timeouts, with a same-harness-retry control and extra cost/time per recovered pass |
 | `study/queue_remaining.py` | Queues the 44 tasks Phase 1 did not cover, for full 89-task coverage (`study/phase2_queue.txt`) |

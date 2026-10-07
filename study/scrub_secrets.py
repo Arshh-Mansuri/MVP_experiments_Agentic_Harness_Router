@@ -50,6 +50,8 @@ def env_values(path):
                 continue
             name, _, value = line.partition(b"=")
             value = value.strip().strip(b'"').strip(b"'")
+            if name.strip().endswith((b"_URL", b"_HOST")):
+                continue
             if len(value) >= 20:
                 out[value] = name.strip().decode("ascii", "replace")
     return dict(sorted(out.items(), key=lambda kv: -len(kv[0])))
