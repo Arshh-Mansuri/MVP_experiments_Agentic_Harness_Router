@@ -8,7 +8,8 @@
 #   already run (Table A in router/success_table.json) is answered from the table with no model call. Any other
 #   task goes to the router with the frozen prompt router/table_system_prompt.txt: 'luna' asks GPT-5.6-Luna,
 #   'jev' asks Jev itself (~typesafe/jev-latest) through OpenRouter's decisions endpoint.
-#   DRY_RUN=1 prints the decision and the Harbor command without running anything.
+#   DRY_RUN=1 prints the decision and the Harbor command without running Harbor. Free for Table A tasks; any other
+#   task still costs its one routing call.
 #   BATCH=<name> groups runs (job name, live_runs.jsonl, Langfuse tag batch:<name>); study/run_final.sh sets it.
 #
 # Tracing: every stage is printed as it happens and appended to study/logs/<job>.trace.jsonl (one JSON object per
@@ -23,6 +24,9 @@ export MODEL="openrouter/openai/gpt-5.6-luna"
 V_TERMINUS2="${V_TERMINUS2:-2.0.0}"; V_MINI="${V_MINI:-2.4.6}"; V_PI="${V_PI:-1.0.1}"
 BATCH="${BATCH:-}"
 JOB="live-${BATCH:+$BATCH-}$ROUTER-$TASK-$(date +%Y%m%d-%H%M%S)"
+while [ -e "jobs/$JOB" ] || [ -e "study/logs/$JOB.trace.jsonl" ]; do
+  sleep 1; JOB="live-${BATCH:+$BATCH-}$ROUTER-$TASK-$(date +%Y%m%d-%H%M%S)"
+done
 TRACE="study/logs/$JOB.trace.jsonl"
 mkdir -p study/logs
 
@@ -101,7 +105,10 @@ if not files:
 r = json.load(open(files[0])); ar = r.get("agent_result") or {}; exc = r.get("exception_info") or {}
 steps = None
 for p in glob.glob(f"{files[0].rsplit('/', 1)[0]}/agent/trajectory*.json"):
-    steps = len(json.load(open(p)).get("steps") or [])
+    try:
+        steps = len(json.load(open(p)).get("steps") or [])
+    except ValueError:
+        pass
 print(json.dumps({
     "reward": ((r.get("verifier_result") or {}).get("rewards") or {}).get("reward"),
     "exception": exc.get("exception_type"),

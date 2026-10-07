@@ -1,17 +1,22 @@
 #!/bin/sh
 # Block commits that carry a credential, so an agent that dumped `env` into its transcript cannot
-# publish our keys again. Scans only the staged files, which keeps it fast on a repo full of run
-# artefacts. Bypass with `git commit --no-verify` if you are certain a match is a false positive.
+# publish our keys again. Scans the staged content (what will actually be committed), copied to a temporary
+# directory, which keeps it fast on a repo full of run artefacts. Bypass with `git commit --no-verify` only if you
+# are certain a match is a false positive.
 set -e
 
-files=$(git diff --cached --name-only --diff-filter=ACM)
+root=$(git rev-parse --show-toplevel)
+files=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -z "$files" ] && exit 0
 
-# shellcheck disable=SC2086
-if ! python3 "$(git rev-parse --show-toplevel)/study/scrub_secrets.py" $files; then
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+git diff --cached --name-only -z --diff-filter=ACMR | xargs -0 git checkout-index --prefix="$tmp/" --
+
+if ! python3 "$root/study/scrub_secrets.py" --env "$root/.env" "$tmp"; then
 	echo
-	echo "pre-commit: refusing to commit a credential."
-	echo "  redact with: python3 study/scrub_secrets.py --apply $(echo $files | tr '\n' ' ')"
+	echo "pre-commit: refusing to commit a credential (paths above are temporary copies of the staged files)."
+	echo "  redact with: python3 study/scrub_secrets.py --apply <files>, then git add them again"
 	echo "  then rotate the credential, because a committed key must be treated as public."
 	exit 1
 fi

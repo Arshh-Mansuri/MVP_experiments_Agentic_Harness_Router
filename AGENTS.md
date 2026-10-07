@@ -21,7 +21,8 @@ from the repo root. Benchmark runs go through the `harbor` CLI and Docker.
    workbook). Do not run benchmarks to iterate on the router, and never feed live-run results (`jobs/live-*`,
    `study/live_runs.jsonl`) back into the table, prompt or evaluation.
 4. **Ask before anything that costs money or time:** Harbor runs, OpenRouter calls (router picks, offline pick
-   scripts), Langfuse uploads beyond a run the user asked for. `DRY_RUN=1` and `--dry-run` are always fine.
+   scripts), Langfuse uploads beyond a run the user asked for. `--dry-run` is always fine, and so is `DRY_RUN=1` on Table A tasks;
+ on any other task `DRY_RUN=1` still makes the paid routing call.
 5. **Frozen files are frozen.** `router/success_table.json`, `router/harness_profiles.json` and
    `router/table_system_prompt.txt` are checked by hash; code refuses to run if they were hand-edited. Change them
    only by rebuilding (`python3 router/build_success_table.py --include-test`, which also rewrites the prompt), and
@@ -62,7 +63,8 @@ from the repo root. Benchmark runs go through the `harbor` CLI and Docker.
 
 ```bash
 python3 router/table_router.py --explain fix-git                  # step-by-step routing decision for a known task
-DRY_RUN=1 study/run_live_router.sh fix-git jev                    # route + print the Harbor command, run nothing
+DRY_RUN=1 study/run_live_router.sh fix-git luna                   # route + print the Harbor command (fix-git is in Table A)
+study/preflight.sh                                                # machine readiness for study/run_final.sh
 ~/.venvs/ilab-obs/bin/python study/langfuse_export.py jobs/<job> --dry-run   # trace tree, unit count, secrets found
 bash -n study/run_live_router.sh                                   # shell syntax check
 python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" <file.py>   # syntax check without writing .pyc

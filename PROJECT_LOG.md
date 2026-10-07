@@ -61,8 +61,27 @@ self-contained:
   `study/live_runs.jsonl` row (with `route_cost` now included) and into the Langfuse tag `batch:<name>`.
 - README rewritten around a fresh-machine quick start.
 
-Estimate from Phase 1: 8.4 minutes and $0.02 per run on average, so about 12 hours and $2–3 for 89 tasks one at a
-time.
+Estimate from Phase 1: 8.4 minutes and $0.02 per run on average, so $2–3 for 89 tasks, and about 4–5 hours with
+3 at a time (12 hours one at a time).
+
+After a full review, the batch runner gained the safeguards `run_phase1.sh` already had:
+- `PARALLEL=3`;
+- one automatic retry for runs that end without a reward;
+- Docker pruning below 20 GB free, and a stop below 6 GB;
+- a stop when OpenRouter credit falls under $0.50;
+- a `study/logs/STOP` file that stops new launches.
+
+Other fixes:
+- The Langfuse exporter crashed on runs that stop before some stage has timestamps (49 of 450 Phase 1 runs).
+  Missing stage times now fall back to the last known time, and all 450 build.
+- Job names can no longer collide.
+- A damaged trajectory file no longer loses a scored result.
+- Harbor is pinned to 0.21.0 in the README, and `study/preflight.sh` warns on any other version.
+- The pre-commit hook now scans the staged content rather than the working copy.
+- `scrub_secrets.py` skips `*_URL`/`*_HOST` values in `.env`, which are not secrets.
+
+A secret scan of every commit on GitHub found no OpenRouter or Langfuse key. The `hf_…` matches are substrings of
+encrypted reasoning blobs, and the private keys are throwaway certificates from the openssl task.
 
 ## 3g. Session log: 7 Oct 2026 — test set unsealed, lookup covers all 45 tasks
 

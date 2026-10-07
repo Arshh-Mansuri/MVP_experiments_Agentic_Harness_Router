@@ -84,7 +84,9 @@ def when(v):
 
 
 def node(name, kind, start, end, **kw):
-    return {"name": name, "type": kind, "start": start, "end": end or start, "children": [], **kw}
+    end = end or start
+    return {"name": name, "type": kind, "start": start, "end": max(start, end) if start and end else end,
+            "children": [], **kw}
 
 
 def luna(model):
@@ -286,6 +288,14 @@ def build(job_dir):
     task, harness = start["task"], route["harness"]
     stage = {k: (when((r.get(k) or {}).get("started_at")), when((r.get(k) or {}).get("finished_at")))
              for k in ("environment_setup", "agent_setup", "agent_execution", "verifier")}
+    env_ready = bool(stage["environment_setup"][1])
+    # A run that stops early (build failure, agent crash) has no times for the stages it never reached; every
+    # observation still needs a start, so those collapse onto the last known time.
+    last = when(r.get("started_at")) or when(start["ts"])
+    for k, (s, e) in stage.items():
+        s = s or last
+        stage[k] = (s, e or s)
+        last = stage[k][1]
     instruction = pr.task_text(task)
     reward = ((r.get("verifier_result") or {}).get("rewards") or {}).get("reward")
     exc = r.get("exception_info") or {}
@@ -323,14 +333,14 @@ def build(job_dir):
                   metadata={"log_pytest": log_tail([os.path.join(trial, "verifier", "test-stdout.txt")], keep=4000)},
                   level="WARNING" if reward is not None and reward < 1 else None)
 
+    exc_line = ((exc.get("exception_message") or "").strip().splitlines() or [""])[0]
     root = node("solve-task", "chain", when(start["ts"]), max(filter(None, [when(r.get("finished_at")),
-                when((events.get("harbor_end") or {}).get("ts"))])),
+                when((events.get("harbor_end") or {}).get("ts")), last])),
                 input=instruction,
                 output={"harness": harness, "reward": reward, "tests": f"{passed}/{len(tests)} passed",
                         "cost_usd": {"routing": route.get("route_cost"), "agent": agent_cost}},
                 level="ERROR" if exc else None,
-                status=f"{exc.get('exception_type')}: {(exc.get('exception_message') or '').strip().splitlines()[0]}"
-                if exc else None,
+                status=clean(f"{exc.get('exception_type')}: {exc_line}") if exc else None,
                 metadata={"job": job, "task": task, "router": start["router"], "harness": harness,
                           "harness_version": route.get("version"), "model": start.get("model"),
                           "match": route.get("match"), "harbor_exit_code": (events.get("harbor_end") or {}).get("exit_code"),
@@ -342,7 +352,7 @@ def build(job_dir):
     root["children"] = [route_node(events, task),
                         node("set-up-environment", "span", *stage["environment_setup"],
                              input={"task": task, "environment": env.get("type")},
-                             output={"ready": bool(stage["environment_setup"][1])}),
+                             output={"ready": env_ready}),
                         agent, verify]
     trace = {"job": job, "name": "solve-task", "session": task,
              "tags": [f"router:{start['router']}", f"harness:{harness}", f"match:{route.get('match')}"]

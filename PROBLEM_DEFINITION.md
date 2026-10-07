@@ -130,7 +130,7 @@ every router here loses by over-diverting.
 
 ## Open items
 
-- OpenRouter key returns 401 since 7 Oct; budget and UTS HPC access unconfirmed (spend so far about $9.1).
+- OpenRouter access was restored on 7 Oct (live runs work); budget and UTS HPC access unconfirmed (spend so far about $9.1).
 - Remaining 44 tasks need Luna runs for full 89-task coverage (`study/phase2_queue.txt`).
 - Confirm that registry `latest` is Terminal-Bench 2.1 and record the ref.
 - Schedule: proposal says presentation 11 Oct and report 18 Oct; the charter says 4, 18 and 25 Oct.

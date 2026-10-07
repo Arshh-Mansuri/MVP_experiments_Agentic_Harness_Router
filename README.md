@@ -31,12 +31,12 @@ The final run sends every task through the live pipeline with **Luna as the rout
 | | |
 |---|---|
 | Machine | macOS or Linux, at least 16 GB RAM, **40 GB or more of free disk** (every task builds its own Docker image) |
-| Docker | [Docker Desktop](https://www.docker.com/products/docker-desktop/), running. Give it at least 8 GB of memory (Settings, Resources) |
+| Docker | [Docker Desktop](https://www.docker.com/products/docker-desktop/), running. Give it about 12 GB of memory (Settings, Resources) for 3 tasks at a time; 8 GB with `PARALLEL=1` |
 | Python | `python3` 3.9 or newer. On macOS, `xcode-select --install` provides it |
 | uv | `curl -LsSf https://astral.sh/uv/install.sh \| sh`. It installs Harbor and the Langfuse venv |
 | OpenRouter key | Pays for Luna. Budget about **$3** for all 89 tasks (Phase 1 averaged $0.02 per run) |
 | Langfuse keys | Optional. Without them runs still work; they just are not uploaded |
-| Time | About **12 hours** for all 89 tasks, one at a time (median 5 minutes per task, a few take over an hour) |
+| Time | About **4–5 hours** for all 89 tasks with 3 at a time (median 5 minutes per task, a few take over an hour) |
 
 ### 1. Install (once)
 
@@ -45,7 +45,7 @@ git clone https://github.com/Arshh-Mansuri/MVP_experiments_Agentic_Harness_Route
 cd MVP_experiments_Agentic_Harness_Router
 git config core.hooksPath hooks              # pre-commit hook that blocks commits containing API keys
 
-uv tool install harbor                       # the benchmark runner; we used 0.21.0 (check: harbor --version)
+uv tool install harbor==0.21.0               # the benchmark runner, pinned to the version the study used
 harbor download terminal-bench --cache       # task instructions and tests into ~/.cache/harbor/tasks
 
 cp .env.example .env                         # then open .env and fill in the keys (see below)
@@ -73,6 +73,7 @@ If you use your own OpenAI credits through OpenRouter (BYOK, under Settings, Int
 ```bash
 study/preflight.sh                                  # tools, Docker, disk, keys, frozen router files, task cache, Langfuse
 DRY_RUN=1 study/run_live_router.sh fix-git luna     # shows the routing decision and the Harbor command, runs nothing
+                                                    # (free for the 45 table tasks; a new task costs one routing call)
 ```
 
 Fix every `FAIL` line before going on. `warn` lines are fine.
@@ -93,14 +94,24 @@ study/run_final.sh study/final_tasks_unseen.txt     # only the 44 tasks Luna has
 study/run_final.sh study/final_tasks_seen.txt       # only the 45 tasks already in the success table
 ```
 
+- **3 tasks at a time.** This is the same as Phase 1, and takes about 4–5 hours for all 89. Use `PARALLEL=1` on a
+  weak machine: about 12 hours.
 - **Resumable.** If it stops (crash, Ctrl-C, reboot, Docker restart), run the same command again. Tasks that already
-  have a score in this batch are skipped, and tasks that ended with no score are retried.
+  have a score in this batch are skipped.
+- **Retries.** A task that ends without a score (Harbor or Docker failed before the tests ran) is retried once
+  straight away, and again on the next rerun. A score of 0 is a real result and is never retried.
+- **Disk.** Below 20 GB free it removes unused Docker images. Below 6 GB after that, it stops launching tasks.
+- **Credit.** It stops launching tasks when the OpenRouter key has less than $0.50 left. `MIN_CREDIT=0` turns this
+  off.
+- **Stopping cleanly.** `touch study/logs/STOP` lets running tasks finish and starts no new ones. Delete the file
+  before running again.
 - **Keeps the machine awake** on macOS with `caffeinate`. Keep the laptop plugged in and the lid open.
-- **Disk.** If disk runs low part-way, stop it, run `docker system prune -a`, then rerun the same command.
 - **Batch name.** It is `final` by default. A different one starts a fresh batch:
   `study/run_final.sh study/final_tasks_all.txt final2`.
 
-When it finishes it prints the batch summary (tasks run, passed, total cost) and lists any task with no score.
+Progress prints one line per task (`start`, `done … reward=1.0`, `fail`, `skip`). Each task's full console output is
+in `study/logs/final-console/<task>.out`. At the end it prints the batch summary (scored, passed, total cost) and
+lists any task left without a score.
 
 ### 5. Where the results are
 

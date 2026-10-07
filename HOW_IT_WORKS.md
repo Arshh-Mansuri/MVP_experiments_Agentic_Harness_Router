@@ -38,7 +38,7 @@ refuses to run if a file was edited after freezing, so a decision can always be 
 
 ```bash
 study/run_live_router.sh <task> [luna|jev]     # router defaults to luna
-DRY_RUN=1 study/run_live_router.sh <task> jev  # route only, print the Harbor command, run nothing
+DRY_RUN=1 study/run_live_router.sh <task> jev  # route only, print the Harbor command (a non-table task still pays to route)
 study/run_final.sh [task-list] [batch]         # many tasks in a row with luna, resumable; sets BATCH=<batch>
 ```
 

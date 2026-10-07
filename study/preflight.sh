@@ -12,8 +12,12 @@ bad()  { echo "  FAIL  $*"; FAIL=1; }
 echo "tools"
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' && ok "python3 $(python3 -V 2>&1 | cut -d' ' -f2)" \
   || bad "python3 3.9 or newer is required"
-command -v harbor >/dev/null && ok "harbor $(harbor --version 2>/dev/null)" \
-  || bad "harbor not found (uv tool install harbor; see README)"
+if command -v harbor >/dev/null; then
+  HV=$(harbor --version 2>/dev/null)
+  [ "$HV" = 0.21.0 ] && ok "harbor $HV" || warn "harbor $HV, but the study used 0.21.0 (uv tool install --force harbor==0.21.0)"
+else
+  bad "harbor not found (uv tool install harbor==0.21.0; see README)"
+fi
 command -v docker >/dev/null || bad "docker not installed"
 docker info >/dev/null 2>&1 && ok "docker is running" || bad "docker is not running (start Docker Desktop)"
 FREE_GB=$(df -Pk . | awk 'NR==2 {print int($4 / 1048576)}')
@@ -44,7 +48,7 @@ try:
     table_router.load_system_prompt(digest)
     print(f"  ok    success table and routing prompt frozen (table_sha256 {digest})")
 except Exception as e:
-    print(f"  FAIL  {e}"); fail = 1
+    print(f"  FAIL  {e}"); sys.exit(1)
 tasks = [l.split()[0] for l in open(sys.argv[1]) if l.strip() and not l.lstrip().startswith("#")]
 known = {r["task"] for r in t["table_a"]}
 missing = []
