@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# One live end-to-end run of the router (PROBLEM_DEFINITION.md step 8): choose a harness, then actually run it on
-# Harbor with the model fixed to Luna and the harness version pinned. Everything else in the study is an offline
-# replay of saved runs, so this is the check that the chosen harness really launches and scores.
+# One live end-to-end run of the meta-harness: Harbor runs the task with our Harbor agent (router/meta_harness.py),
+# which routes it to one of the three harnesses and delegates to that harness, with the model fixed to Luna and the
+# harness version pinned. Everything else in the study is an offline replay of saved runs, so this is the check
+# that the meta-harness really launches and scores.
 #
 # usage: study/run_live_router.sh <task> [router]
 #   router is 'luna' (default) or 'jev'; the model doing the task is always Luna. Either way a task Luna has
 #   already run (Table A in router/success_table.json) is answered from the table with no model call. Any other
 #   task goes to the router with the frozen prompt router/table_system_prompt.txt: 'luna' asks GPT-5.6-Luna,
-#   'jev' asks Jev itself (~typesafe/jev-latest) through OpenRouter's decisions endpoint.
-#   DRY_RUN=1 prints the decision and the Harbor command without running Harbor. Free for Table A tasks; any other
-#   task still costs its one routing call.
+#   'jev' asks Jev itself (~typesafe/jev-latest) through OpenRouter's decisions endpoint. The decision is made inside
+#   Harbor, during agent setup, and saved as agent/route.json in the trial.
+#   DRY_RUN=1 makes the same decision here and prints the Harbor command without running Harbor. Free for Table A
+#   tasks; any other task still costs its one routing call.
 #   BATCH=<name> groups runs (job name, live_runs.jsonl, Langfuse tag batch:<name>); study/run_final.sh sets it.
 #   FALLBACK_HARNESS=<h> FALLBACK_OF=<job> FALLBACK_TRIGGER=<why>: the fallback attempt. No routing call; the harness
 #   is the one that failed in <job> (same-harness retry, see study/fallback_sim.py). study/run_final.sh sets these.
@@ -23,7 +25,8 @@ cd "$(dirname "$0")/.."
 TASK="${1:?usage: study/run_live_router.sh <task> [router]}"
 ROUTER="${2:-luna}"
 export MODEL="openrouter/openai/gpt-5.6-luna"
-V_TERMINUS2="${V_TERMINUS2:-2.0.0}"; V_MINI="${V_MINI:-2.4.6}"; V_PI="${V_PI:-1.0.1}"
+export V_TERMINUS2="${V_TERMINUS2:-2.0.0}" V_MINI="${V_MINI:-2.4.6}" V_PI="${V_PI:-1.0.1}"
+case "$ROUTER" in luna|jev) ;; *) echo "unknown router '$ROUTER': use luna or jev"; exit 1;; esac
 BATCH="${BATCH:-}"
 JOB="live-${BATCH:+$BATCH-}$ROUTER-$TASK-$(date +%Y%m%d-%H%M%S)"
 while [ -e "jobs/$JOB" ] || [ -e "study/logs/$JOB.trace.jsonl" ]; do
@@ -49,44 +52,51 @@ export FALLBACK_HARNESS="${FALLBACK_HARNESS:-}" FALLBACK_OF="${FALLBACK_OF:-}" F
 ev start "$(python3 -c 'import json,sys; d=dict(zip(["task","router","model","job","batch","fallback_of"], sys.argv[1:])); d["batch"]=d["batch"] or None; d["fallback_of"]=d["fallback_of"] or None; print(json.dumps(d))' \
   "$TASK" "$ROUTER" "$MODEL" "$JOB" "$BATCH" "$FALLBACK_OF")"
 
-# Routing: writes the decision (with its step-by-step trace) as one JSON object.
-ROUTE=$(TASK="$TASK" ROUTER="$ROUTER" python3 - <<'PY'
-import json, os, sys
+# The routing decision as one JSON object (with its step-by-step trace): read from the trial's agent/route.json
+# after Harbor ran, or, for a dry run (argument '-'), made here with the same code.
+route() {
+  TASK="$TASK" ROUTER="$ROUTER" python3 - "$1" <<'PY'
+import glob, json, os, sys
 sys.path.insert(0, "router")
-import table_router, profile_router as pr
-task, router = os.environ["TASK"], os.environ["ROUTER"]
-if os.environ.get("FALLBACK_HARNESS"):
-    h, why, of = os.environ["FALLBACK_HARNESS"], os.environ.get("FALLBACK_TRIGGER") or "failure", os.environ["FALLBACK_OF"]
-    info = {"match": "fallback", "reason": f"same-harness retry after {why} in {of}",
-            "trace": [{"step": "fallback: no routing call", "harness": h, "trigger": why, "first_attempt": of}]}
-elif router == "luna":
-    h, info = table_router.pick(task, pr.task_text(task), "luna")
-elif router == "jev":
-    h, info = table_router.decide(task, pr.task_text(task))
+src = sys.argv[1]
+if src == "-":
+    import meta_route
+    h, ver, info = meta_route.route(os.environ["TASK"], os.environ["ROUTER"], os.environ.get("FALLBACK_HARNESS"),
+                                    os.environ.get("FALLBACK_TRIGGER"), os.environ.get("FALLBACK_OF"))
+    info = dict(info, harness=h, version=ver)
 else:
-    sys.exit(f"unknown router '{router}': use luna or jev")
-print(json.dumps({"harness": h, "match": info.get("match"), "reason": info.get("reason"),
-                  "route_cost": info.get("cost", 0.0), "route_seconds": info.get("seconds", 0.0),
-                  "underlying_model": info.get("underlying_model"), "table_sha256": info.get("table_sha256"),
-                  "raw": info.get("raw"), "trace": info.get("trace", [])}, default=str))
+    files = glob.glob(f"{src}/*__*/agent/route.json")
+    info = json.load(open(files[0])) if files else {
+        "reason": "no routing decision recorded: Harbor stopped before agent setup"}
+out = {"harness": info.get("harness"), "version": info.get("version"), "match": info.get("match"),
+       "reason": info.get("reason"), "route_cost": info.get("cost", 0.0), "route_seconds": info.get("seconds", 0.0),
+       "underlying_model": info.get("underlying_model"), "table_sha256": info.get("table_sha256"),
+       "raw": info.get("raw"), "trace": info.get("trace", [])}
+if info.get("routed_at"):
+    out["ts"] = info["routed_at"]
+print(json.dumps(out, default=str))
 PY
-)
-HARNESS=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["harness"] or "")' "$ROUTE")
-case "$HARNESS" in
-  terminus-2) VER="$V_TERMINUS2";; mini-swe-agent) VER="$V_MINI";; pi) VER="$V_PI";;
-  *) ev route "$ROUTE"; echo "router '$ROUTER' returned '$HARNESS', which is not one of our three harnesses"; exit 1;;
-esac
-ROUTE=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); d["version"]=sys.argv[2]; print(json.dumps(d))' "$ROUTE" "$VER")
-ev route "$ROUTE"
-python3 - "$ROUTE" <<'PY'
+}
+show_steps() {
+  python3 - "$1" <<'PY'
 import json, sys
 for i, s in enumerate(json.loads(sys.argv[1])["trace"], 1):
     step = s.pop("step")
-    print(f"    {i}. {step}" + (f"  {json.dumps(s)}" if s else ""))
+    print(f"    {i}. {step}" + (f"  {json.dumps(s, default=str)}" if s else ""))
 PY
+}
 
-CMD=(harbor run -t "terminal-bench/$TASK" --model "$MODEL" --agent "$HARNESS" --ak "version=$VER" --job-name "$JOB")
-if [ "${DRY_RUN:-0}" = 1 ]; then printf 'would run:'; printf ' %q' "${CMD[@]}"; echo; rm -f "$TRACE"; exit 0; fi
+export PYTHONPATH="$PWD/router${PYTHONPATH:+:$PYTHONPATH}"
+AK=(--ak "router=$ROUTER")
+case "$FALLBACK_HARNESS" in
+  terminus-2|mini-swe-agent|pi)
+    AK+=(--ak "force_harness=$FALLBACK_HARNESS" --ak "trigger=${FALLBACK_TRIGGER:-failure}" --ak "first_job=$FALLBACK_OF");;
+esac
+CMD=(harbor run -t "terminal-bench/$TASK" --model "$MODEL" --agent meta_harness:MetaHarness "${AK[@]}" --job-name "$JOB")
+if [ "${DRY_RUN:-0}" = 1 ]; then
+  ROUTE=$(route -); ev route "$ROUTE"; show_steps "$ROUTE"
+  printf 'would run:'; printf ' %q' "${CMD[@]}"; echo; rm -f "$TRACE"; exit 0
+fi
 
 docker info >/dev/null 2>&1 || { ev abort '{"why": "Docker is not running"}'; exit 1; }
 ev harbor_start "$(python3 -c 'import json,sys; print(json.dumps({"cmd": " ".join(sys.argv[1:])}))' "${CMD[@]}")"
@@ -96,6 +106,9 @@ set +e
 RC=${PIPESTATUS[0]}
 set -e
 ev harbor_end "{\"exit_code\": $RC, \"seconds\": $(( $(date +%s) - T0 ))}"
+ROUTE=$(route "jobs/$JOB")
+ev route "$ROUTE"
+show_steps "$ROUTE"
 
 # Result: what the agent did and how it ended, from Harbor's result.json and trajectory.
 RESULT=$(python3 - "jobs/$JOB" <<'PY'

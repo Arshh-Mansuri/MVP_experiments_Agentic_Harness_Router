@@ -20,7 +20,8 @@ task ──► router (Luna or Jev) ──► harness (terminus-2 | mini-swe-age
 
 | Piece | File | What it does |
 |---|---|---|
-| Live runner | `study/run_live_router.sh` | Runs one task end to end: route, run on Harbor, record, upload the trace |
+| Live runner | `study/run_live_router.sh` | Runs one task end to end: run the meta-harness on Harbor, record, upload the trace |
+| Meta-harness | `router/meta_harness.py`, `router/meta_route.py` | The Harbor agent: routes the task in `setup()`, then delegates to the chosen harness |
 | Router | `router/table_router.py` | `pick()` asks Luna, `decide()` asks Jev; both read the success table first |
 | Success table | `router/success_table.json` (+ `.md`) | Frozen results: Luna on 45 tasks (Table A), Qwen3-Coder on 89 (Table B) |
 | Routing prompt | `router/table_system_prompt.txt` | Frozen system prompt built from the table; same for Luna and Jev |
@@ -48,7 +49,10 @@ the `study/live_runs.jsonl` row and a Langfuse tag `batch:<name>`. `study/prefli
 
 **Fallback.** When a first attempt ends with no reward, a crash exception or `AgentTimeoutError`,
 `study/run_final.sh` calls the runner again with `FALLBACK_HARNESS`, `FALLBACK_OF` and `FALLBACK_TRIGGER`.
-- Routing is skipped: the route event has `match: fallback`, and its single step is `fallback: no routing call`.
+- Routing is skipped (the meta-harness gets `--ak force_harness=<harness>`): the route event has
+  `match: fallback`, and its single step is `fallback: no routing call`.
+- The fallback is a second Harbor trial, not a retry inside the agent: Harbor's agent timeout cancels the whole
+  agent, so a timed-out first attempt cannot hand over from within.
 - The same harness runs again.
 - The row is marked `attempt: fallback`, and the Langfuse trace is tagged `attempt:fallback`.
 - The task's final result is the fallback's.
@@ -58,10 +62,18 @@ the `study/live_runs.jsonl` row and a Langfuse tag `batch:<name>`. `study/prefli
 The script loads `.env` (API keys, never printed), fixes the executor to `openrouter/openai/gpt-5.6-luna`, pins the
 harness versions (terminus-2 2.0.0, mini-swe-agent 2.4.6, pi 1.0.1) and names the job
 `live-<router>-<task>-<timestamp>`. Every stage from here on is printed and appended to
-`study/logs/<job>.trace.jsonl` as one JSON event (`start`, `route`, `harbor_start`, `harbor_end`, `result`,
+`study/logs/<job>.trace.jsonl` as one JSON event (`start`, `harbor_start`, `harbor_end`, `route`, `result`,
 `observability`).
 
-### 2. Route
+### 2. Route (inside Harbor, in the meta-harness)
+
+The router is packaged as a Harbor custom agent, `router/meta_harness.py:MetaHarness`, so Harbor runs the
+meta-harness like any other agent (`--agent meta_harness:MetaHarness`, with `router/` on `PYTHONPATH`). In
+`setup()` it calls `meta_route.route()` (the code below), saves the decision as `agent/route.json` in the trial,
+builds the chosen harness with its pinned version through Harbor's own `AgentFactory`, and delegates `setup()`,
+`run()` and the token and cost accounting to it. Harbor's `result.json` shows the agent as `meta-harness`, version
+`<harness>@<version>`. The live runner reads `route.json` after Harbor finishes and logs it as the `route` event
+(timestamped when the decision was made). A dry run makes the same decision outside Harbor.
 
 Both routers follow the same two cases.
 
@@ -90,7 +102,8 @@ The prompt tells the router, in order:
 4. Otherwise use mini-swe-agent, the best single harness overall and the cheapest.
 
 Every decision carries a step-by-step trace (which rule fired, the evidence, tokens, cost) that lands in the
-`route` event. If the reply names no valid harness the run stops before Harbor starts.
+`route` event. If the reply names no valid harness, agent setup fails and the trial ends with no reward (which the
+final run treats as a fallback trigger).
 
 `typesafe/jev-router` is **not** used anywhere: it forwards requests to other models (DeepSeek V4.1 Flash,
 GPT-6.1-Sol), so its answers were never Jev's.
@@ -98,13 +111,15 @@ GPT-6.1-Sol), so its answers were never Jev's.
 ### 3. Run on Harbor
 
 ```
-harbor run -t terminal-bench/<task> --model openrouter/openai/gpt-5.6-luna --agent <harness> --ak version=<pinned> --job-name <job>
+PYTHONPATH=router harbor run -t terminal-bench/<task> --model openrouter/openai/gpt-5.6-luna \
+  --agent meta_harness:MetaHarness --ak router=luna --job-name <job>
+# fallback adds: --ak force_harness=<harness> --ak trigger=<why> --ak first_job=<job>
 ```
 
 Harbor then:
 
 1. **Sets up the environment**: builds or starts the task's Docker container (needs Docker Desktop running).
-2. **Installs the harness** inside the container.
+2. **Sets up the meta-harness**: routes (step 2 above), then installs the chosen harness inside the container.
 3. **Runs the agent**: the harness loops, with Luna deciding the next action, the harness executing it in the
    container and feeding back the output, until Luna declares the task done or a time limit hits.
    - terminus-2 types keystrokes into a tmux terminal and reads the screen.

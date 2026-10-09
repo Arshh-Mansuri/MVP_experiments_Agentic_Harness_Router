@@ -45,6 +45,27 @@ never past benchmark results.
 
 ---
 
+## 3j. 9 Oct 2026: the meta-harness is a Harbor agent
+
+The brief asks for the router to be built as a meta-harness that Harbor runs as an agent. Until now the routing
+happened in bash before Harbor was called with a plain harness name.
+- `router/meta_harness.py:MetaHarness` is a Harbor custom agent (`BaseAgent`), loaded with
+  `PYTHONPATH=router harbor run ... --agent meta_harness:MetaHarness --ak router=luna|jev`.
+- In `setup()` it routes with `router/meta_route.py`, which wraps the same `table_router.pick()`/`decide()`, so
+  decisions are unchanged. It writes the decision to `agent/route.json`, builds the chosen harness at its pinned
+  version with Harbor's `AgentFactory`, and delegates setup, run and the token and cost accounting to it.
+- A fallback passes `--ak force_harness=<h>` (plus `trigger`, `first_job`) and skips routing. It stays a second
+  trial run by `study/run_final.sh`: Harbor's agent timeout cancels the whole agent, so a timed-out attempt cannot
+  hand over from inside.
+- `study/run_live_router.sh` reads `route.json` after Harbor and logs it as the `route` event. The
+  `live_runs.jsonl` rows, the Langfuse exporter and `study/final_results.py` are unchanged. `DRY_RUN=1` routes
+  outside Harbor and prints the meta-agent command.
+- Checked for free: Harbor's factory loads the agent from the import path, and with the inner setup stubbed it
+  routes fix-git to terminus-2, build-pov-ray to mini-swe-agent, and a forced fallback to pi.
+- Live smoke run `live-luna-fix-git-20261009-202741`: the meta-harness routed fix-git to terminus-2 from the
+  table, reward 1.0, 2.1 min, $0.0098, uploaded to Langfuse. `result.json` shows the agent as
+  `meta-harness terminus-2@2.0.0`. An earlier attempt (`…-202543`) was interrupted from outside after it had routed.
+
 ## 3i. 9 Oct 2026: final run aligned with the Project 16 brief
 
 We checked the brief (iLab S2 2026 project list, Project #16) against the pipeline. Two gaps were closed, and the

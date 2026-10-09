@@ -285,7 +285,7 @@ def route_node(events, task):
 def build(job_dir):
     job, events, trial, r = load(job_dir)
     start, route, result = events["start"], events["route"], events.get("result", {})
-    task, harness = start["task"], route["harness"]
+    task, harness = start["task"], route.get("harness") or "meta-harness"
     stage = {k: (when((r.get(k) or {}).get("started_at")), when((r.get(k) or {}).get("finished_at")))
              for k in ("environment_setup", "agent_setup", "agent_execution", "verifier")}
     env_ready = bool(stage["environment_setup"][1])

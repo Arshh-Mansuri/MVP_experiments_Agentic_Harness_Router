@@ -98,6 +98,11 @@ study/run_live_router.sh fix-git luna
 
 It should end with `"reward": 1.0` (or 0.0; fix-git sometimes fails on its own) and a Langfuse URL.
 
+The router runs inside Harbor as a custom agent, the **meta-harness** (`router/meta_harness.py`). The runner calls
+`PYTHONPATH=router harbor run ... --agent meta_harness:MetaHarness --ak router=luna`. The agent picks the harness
+during setup, saves the decision as `agent/route.json` in the trial, and hands the task to that harness.
+`result.json` lists the agent as `meta-harness` with version `<harness>@<version>`.
+
 ### 4. The final run
 
 ```bash
@@ -232,7 +237,8 @@ logs to `study/test_unseal_log.jsonl`, so the before-and-after numbers can be re
 | `study/final_results.py` | Final results table: router vs each single harness (accuracy, cost, tokens) |
 | `study/preflight.sh` | Free readiness check for a machine |
 | `study/final_tasks_*.txt` | Task lists: `all` (89), `unseen` (44 new), `seen` (45 known) |
-| `study/run_live_router.sh` | One live run: route, Harbor, record, Langfuse upload |
+| `study/run_live_router.sh` | One live run: meta-harness on Harbor, record, Langfuse upload |
+| `router/meta_harness.py`, `router/meta_route.py` | The meta-harness Harbor agent and its routing step (incl. forced fallback) |
 | `study/langfuse_export.py`, `study/langfuse_dashboard.py` | Run to Langfuse trace; the Langfuse dashboard definition |
 | `router/table_router.py` | The live router: `pick()` (Luna), `decide()` (Jev), `lookup()` (no model, offline only) |
 | `router/success_table.json`, `router/table_system_prompt.txt` | Frozen table and routing prompt, checked by hash |

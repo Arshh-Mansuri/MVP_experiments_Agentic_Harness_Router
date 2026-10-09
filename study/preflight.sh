@@ -15,6 +15,14 @@ python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' && ok "python3 $(py
 if command -v harbor >/dev/null; then
   HV=$(harbor --version 2>/dev/null)
   [ "$HV" = 0.21.0 ] && ok "harbor $HV" || warn "harbor $HV, but the study used 0.21.0 (uv tool install --force harbor==0.21.0)"
+  HPY=$(head -1 "$(command -v harbor)" | sed 's/^#!//')
+  PYTHONPATH="$PWD/router" "$HPY" -c '
+from pathlib import Path; import tempfile
+from harbor.agents.factory import AgentFactory
+from harbor.models.trial.config import AgentConfig
+AgentFactory.create_agent_from_config(AgentConfig(import_path="meta_harness:MetaHarness"), logs_dir=Path(tempfile.mkdtemp()))
+' >/dev/null 2>&1 && ok "harbor loads the meta-harness agent (meta_harness:MetaHarness)" \
+    || bad "harbor cannot load router/meta_harness.py (run: PYTHONPATH=router $HPY -c 'import meta_harness')"
 else
   bad "harbor not found (uv tool install harbor==0.21.0; see README)"
 fi
