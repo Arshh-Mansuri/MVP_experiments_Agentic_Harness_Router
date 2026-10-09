@@ -39,11 +39,19 @@ refuses to run if a file was edited after freezing, so a decision can always be 
 ```bash
 study/run_live_router.sh <task> [luna|jev]     # router defaults to luna
 DRY_RUN=1 study/run_live_router.sh <task> jev  # route only, print the Harbor command (a non-table task still pays to route)
-study/run_final.sh [task-list] [batch]         # many tasks in a row with luna, resumable; sets BATCH=<batch>
+study/run_final.sh [task-list] [batch]         # many tasks with luna, same-harness fallback, resumable; sets BATCH=<batch>
+python3 study/final_results.py                 # results table: router vs each single harness (no runs, no calls)
 ```
 
 `BATCH=<name>` (set by `study/run_final.sh`) puts the batch into the job name (`live-<batch>-luna-<task>-<time>`),
 the `study/live_runs.jsonl` row and a Langfuse tag `batch:<name>`. `study/preflight.sh` checks a machine first.
+
+**Fallback.** When a first attempt ends with no reward, a crash exception or `AgentTimeoutError`,
+`study/run_final.sh` calls the runner again with `FALLBACK_HARNESS`, `FALLBACK_OF` and `FALLBACK_TRIGGER`.
+- Routing is skipped: the route event has `match: fallback`, and its single step is `fallback: no routing call`.
+- The same harness runs again.
+- The row is marked `attempt: fallback`, and the Langfuse trace is tagged `attempt:fallback`.
+- The task's final result is the fallback's.
 
 ### 1. Start
 

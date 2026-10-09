@@ -45,6 +45,33 @@ never past benchmark results.
 
 ---
 
+## 3i. 9 Oct 2026: final run aligned with the Project 16 brief
+
+We checked the brief (iLab S2 2026 project list, Project #16) against the pipeline. Two gaps were closed, and the
+baseline question was settled.
+
+**Fallback.** The brief asks for "a fallback harness if the first attempt fails"; the live pipeline had none.
+- `study/run_final.sh` now gives each task one fallback attempt when the first attempt fails in a way visible at
+  run time. The triggers are those of `study/fallback_sim.py`: no reward, a crash exception, or `AgentTimeoutError`.
+- The fallback reruns the same harness, with no routing call. Offline, retrying the same harness recovered as much
+  as switching.
+- The task's result is the fallback's. The fallback never uses the hidden test result.
+- This replaces the generic retry of runs with no reward, which keeps it to the brief's "one fallback retry".
+- `study/run_live_router.sh` takes `FALLBACK_HARNESS`/`FALLBACK_OF`/`FALLBACK_TRIGGER`.
+- Rows now carry `attempt`, `fallback_of`, `trigger`, tokens and minutes.
+- Fallback traces get the Langfuse tag `attempt:fallback`.
+
+**Results table.** `study/final_results.py` is new. It builds the brief's "router vs each single harness"
+table from the batch, with no runs and no calls.
+
+**Baseline (team decision).**
+- The Qwen3-Coder workbook (89 tasks x 4 harnesses) is the Stage 1 baseline deliverable.
+- The like-for-like comparison, with the model held constant, uses Luna's Phase 1 runs on the 45 Table A tasks.
+  There, single harnesses are scored with crashes counted as fails, with and without the same-harness fallback.
+- The 44 unseen tasks report the router's own score, cost and tokens. Qwen's per-harness results appear beside them
+  only as a reference, because Qwen is a different model.
+- Running Luna on the 44 missing tasks (132 runs) was considered and not done.
+
 ## 3h. 7 Oct 2026 (evening): ready for the final run
 
 The final run uses Luna as both the router and the executor, over all 89 tasks. The 45 known tasks come from the

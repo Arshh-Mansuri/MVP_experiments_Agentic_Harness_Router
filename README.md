@@ -23,8 +23,20 @@ The final run sends every task through the live pipeline with **Luna as the rout
    - For the 45 tasks Luna has already run, the pick comes from the frozen success table, with no model call.
    - For the 44 new tasks, Luna is asked once, with the frozen routing prompt.
 2. **Run.** Harbor runs the task in Docker with that harness. The harness version is pinned.
-3. **Verify.** The task's own tests score it as a reward of 0 or 1.
-4. **Record.** The result goes to `jobs/`, `study/live_runs.jsonl` and `study/logs/`, and is uploaded to Langfuse.
+3. **Fall back.** If the run crashes, times out or produces no result, the same harness runs it once more.
+4. **Verify.** The task's own tests score it as a reward of 0 or 1.
+5. **Record.** The result goes to `jobs/`, `study/live_runs.jsonl` and `study/logs/`, and is uploaded to Langfuse.
+   `study/final_results.py` then turns the batch into the results table: the router against each single harness.
+
+This matches the brief for Project 16 (iLab S2 2026, "Build a Meta-Harness That Routes Terminal-Bench Tasks to the
+Best Harness"):
+- the model is held constant;
+- the router picks between three established harnesses, with one fallback retry;
+- the router was developed offline against saved results;
+- one full run of the 89 tasks at the end.
+
+The 89-task Stage 1 baseline is the Qwen3-Coder workbook. Luna has a full 3-harness baseline on 45 of the tasks, so
+the like-for-like comparison of router against single harness uses those 45.
 
 ### What you need
 
@@ -98,8 +110,11 @@ study/run_final.sh study/final_tasks_seen.txt       # only the 45 tasks already 
   weak machine: about 12 hours.
 - **Resumable.** If it stops (crash, Ctrl-C, reboot, Docker restart), run the same command again. Tasks that already
   have a score in this batch are skipped.
-- **Retries.** A task that ends without a score (Harbor or Docker failed before the tests ran) is retried once
-  straight away, and again on the next rerun. A score of 0 is a real result and is never retried.
+- **Fallback (the brief's "fallback harness if the first attempt fails").** If the first attempt fails in a way
+  visible at run time, the same harness runs the task once more, with no new routing call. "Visible at run time"
+  means no result, a crash, or the agent timing out. The task's result is then the fallback's.
+  - The fallback never looks at the hidden tests, so a plain score of 0 does not trigger it.
+  - Offline, retrying the same harness recovered as much as switching harness (`study/fallback_sim.py`).
 - **Disk.** Below 20 GB free it removes unused Docker images. Below 6 GB after that, it stops launching tasks.
 - **Credit.** It stops launching tasks when the OpenRouter key has less than $0.50 left. `MIN_CREDIT=0` turns this
   off.
@@ -109,20 +124,42 @@ study/run_final.sh study/final_tasks_seen.txt       # only the 45 tasks already 
 - **Batch name.** It is `final` by default. A different one starts a fresh batch:
   `study/run_final.sh study/final_tasks_all.txt final2`.
 
-Progress prints one line per task (`start`, `done … reward=1.0`, `fail`, `skip`). Each task's full console output is
-in `study/logs/final-console/<task>.out`. At the end it prints the batch summary (scored, passed, total cost) and
-lists any task left without a score.
+Progress prints one line per task (`start`, `fallback`, `done … reward=1.0`, `skip`). Each task's full console
+output is in `study/logs/final-console/<task>.out`. At the end it prints the batch summary: tasks scored and passed,
+fallbacks fired and rescued, cost, tokens and harness picks.
 
-### 5. Where the results are
+### 5. The results table (Project 16 deliverable)
+
+```bash
+python3 study/final_results.py          # writes study/final_results_final.md; no runs, no API calls
+```
+
+The results file has five parts:
+- **The batch summary**, as printed at the end of the run.
+- **The 45 Table A tasks: the router against each single harness, with the model held constant.**
+  - It compares with Luna's Phase 1 runs on each harness, with and without the same-harness fallback, and with
+    perfect picking.
+  - It reports pass rate, cost, cost per pass and tokens, plus a paired bootstrap CI against
+    always-mini-swe-agent with fallback.
+  - The router answers these tasks from the success table, so this measures the deployed system, not
+    generalisation.
+- **The 44 unseen tasks: the router's own score, cost and tokens.**
+  - There is no Luna baseline for these tasks.
+  - Qwen3-Coder's per-harness results are shown as a reference only, because Qwen is a different model.
+- **The Stage 1 baseline:** Qwen3-Coder 480B on all 89 tasks with 4 harnesses, from the workbook.
+- **One row per task.**
+
+### 6. Where the raw results are
 
 | Where | What |
 |---|---|
-| `study/live_runs.jsonl` | One line per run: task, harness, why it was chosen, reward, cost, `batch: final` |
+| `study/final_results_final.md` | The results table (`python3 study/final_results.py`) |
+| `study/live_runs.jsonl` | One line per run: task, harness, why it was chosen, reward, cost, tokens, `batch: final`, `attempt: first` or `fallback` |
 | `jobs/live-final-luna-<task>-<time>/` | Harbor's full output: trajectories, test results |
 | `study/logs/<job>.log`, `<job>.trace.jsonl` | Harbor's console log, and the timeline of each stage |
 | Langfuse, dashboard "iLab router: live runs" | One trace per run (filter by tag `batch:final`), with pass rate and spend charts |
 
-### 6. Send the results back
+### 7. Send the results back
 
 The pre-commit hook blocks commits that contain an API key. Agents inside the container can see the key and sometimes
 print it, so scrub first, then push to a branch rather than `main`:
@@ -130,7 +167,8 @@ print it, so scrub first, then push to a branch rather than `main`:
 ```bash
 python3 study/scrub_secrets.py --apply             # redacts any key that ended up in a run log
 git checkout -b final-run
-git add jobs/live-final-* study/live_runs.jsonl study/logs
+python3 study/final_results.py
+git add jobs/live-final-* study/live_runs.jsonl study/logs study/final_results_final.md
 git commit -m "Final run: Luna router, Luna executor"
 git push -u origin final-run
 ```
@@ -190,7 +228,8 @@ logs to `study/test_unseal_log.jsonl`, so the before-and-after numbers can be re
 
 | Path | What it is |
 |---|---|
-| `study/run_final.sh` | The final run: a task list through the live pipeline with Luna, resumable |
+| `study/run_final.sh` | The final run: a task list through the live pipeline with Luna, same-harness fallback, resumable |
+| `study/final_results.py` | Final results table: router vs each single harness (accuracy, cost, tokens) |
 | `study/preflight.sh` | Free readiness check for a machine |
 | `study/final_tasks_*.txt` | Task lists: `all` (89), `unseen` (44 new), `seen` (45 known) |
 | `study/run_live_router.sh` | One live run: route, Harbor, record, Langfuse upload |

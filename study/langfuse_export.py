@@ -356,9 +356,10 @@ def build(job_dir):
                         agent, verify]
     trace = {"job": job, "name": "solve-task", "session": task,
              "tags": [f"router:{start['router']}", f"harness:{harness}", f"match:{route.get('match')}"]
-                     + ([f"batch:{start['batch']}"] if start.get("batch") else []),
+                     + ([f"batch:{start['batch']}"] if start.get("batch") else [])
+                     + (["attempt:fallback"] if start.get("fallback_of") else []),
              "metadata": {"task": task, "router": start["router"], "harness": harness, "match": route.get("match"),
-                          "batch": start.get("batch")},
+                          "batch": start.get("batch"), "fallback_of": start.get("fallback_of")},
              "scores": [s for s in [
                  {"name": "reward", "value": reward, "comment": f"{passed}/{len(tests)} tests passed"}
                  if reward is not None else None,

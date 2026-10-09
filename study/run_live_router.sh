@@ -11,6 +11,8 @@
 #   DRY_RUN=1 prints the decision and the Harbor command without running Harbor. Free for Table A tasks; any other
 #   task still costs its one routing call.
 #   BATCH=<name> groups runs (job name, live_runs.jsonl, Langfuse tag batch:<name>); study/run_final.sh sets it.
+#   FALLBACK_HARNESS=<h> FALLBACK_OF=<job> FALLBACK_TRIGGER=<why>: the fallback attempt. No routing call; the harness
+#   is the one that failed in <job> (same-harness retry, see study/fallback_sim.py). study/run_final.sh sets these.
 #
 # Tracing: every stage is printed as it happens and appended to study/logs/<job>.trace.jsonl (one JSON object per
 # line: start, route with the router's step-by-step trace, harbor_start, harbor_end, result). Harbor's own output
@@ -43,8 +45,9 @@ PY
 }
 
 set -a; . ./.env; set +a; export OPENROUTER_API_KEY
-ev start "$(python3 -c 'import json,sys; d=dict(zip(["task","router","model","job","batch"], sys.argv[1:])); d["batch"]=d["batch"] or None; print(json.dumps(d))' \
-  "$TASK" "$ROUTER" "$MODEL" "$JOB" "$BATCH")"
+export FALLBACK_HARNESS="${FALLBACK_HARNESS:-}" FALLBACK_OF="${FALLBACK_OF:-}" FALLBACK_TRIGGER="${FALLBACK_TRIGGER:-}"
+ev start "$(python3 -c 'import json,sys; d=dict(zip(["task","router","model","job","batch","fallback_of"], sys.argv[1:])); d["batch"]=d["batch"] or None; d["fallback_of"]=d["fallback_of"] or None; print(json.dumps(d))' \
+  "$TASK" "$ROUTER" "$MODEL" "$JOB" "$BATCH" "$FALLBACK_OF")"
 
 # Routing: writes the decision (with its step-by-step trace) as one JSON object.
 ROUTE=$(TASK="$TASK" ROUTER="$ROUTER" python3 - <<'PY'
@@ -52,7 +55,11 @@ import json, os, sys
 sys.path.insert(0, "router")
 import table_router, profile_router as pr
 task, router = os.environ["TASK"], os.environ["ROUTER"]
-if router == "luna":
+if os.environ.get("FALLBACK_HARNESS"):
+    h, why, of = os.environ["FALLBACK_HARNESS"], os.environ.get("FALLBACK_TRIGGER") or "failure", os.environ["FALLBACK_OF"]
+    info = {"match": "fallback", "reason": f"same-harness retry after {why} in {of}",
+            "trace": [{"step": "fallback: no routing call", "harness": h, "trigger": why, "first_attempt": of}]}
+elif router == "luna":
     h, info = table_router.pick(task, pr.task_text(task), "luna")
 elif router == "jev":
     h, info = table_router.decide(task, pr.task_text(task))
@@ -123,15 +130,21 @@ PY
 ev result "$RESULT"
 
 python3 - "$ROUTE" "$RESULT" "$TASK" "$ROUTER" "$JOB" "$TRACE" "$BATCH" >> study/live_runs.jsonl <<'PY'
-import datetime, json, sys
+import datetime, json, os, sys
 route, res = json.loads(sys.argv[1]), json.loads(sys.argv[2])
 row = {"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
        "task": sys.argv[3], "router": sys.argv[4], "harness": route["harness"], "version": route["version"],
        "match": route["match"], "reason": route["reason"], "job": sys.argv[5],
        "reward": res.get("reward"), "exception": res.get("exception"), "cost_usd": res.get("cost_usd"),
-       "route_cost": route.get("route_cost"), "trace": sys.argv[6]}
+       "route_cost": route.get("route_cost"), "input_tokens": res.get("input_tokens"),
+       "cached_tokens": res.get("cached_tokens"), "output_tokens": res.get("output_tokens"),
+       "minutes": (res.get("minutes") or {}).get("total"), "trace": sys.argv[6]}
 if sys.argv[7]:
     row["batch"] = sys.argv[7]
+if os.environ.get("FALLBACK_OF"):
+    row.update(attempt="fallback", fallback_of=os.environ["FALLBACK_OF"], trigger=os.environ.get("FALLBACK_TRIGGER"))
+else:
+    row["attempt"] = "first"
 print(json.dumps(row))
 PY
 echo "trace     $TRACE"

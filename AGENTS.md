@@ -41,7 +41,8 @@ from the repo root. Benchmark runs go through the `harbor` CLI and Docker.
 | `router/profile_router.py` | Harness list, `task_text()`, profile loading, OpenRouter chat call |
 | `router/build_success_table.py` | Builds and freezes the success table + routing prompt |
 | `router/router.py`, `router/pick_offline.py` | Older LangGraph pipeline and offline pick replays (Luna/Gemma/classifier comparisons) |
-| `study/run_live_router.sh` | One live run: route, Harbor, record, Langfuse upload |
+| `study/run_live_router.sh` | One live run: route (or fallback), Harbor, record, Langfuse upload |
+| `study/run_final.sh`, `study/final_results.py` | Final 89-task batch with same-harness fallback; its results table |
 | `study/langfuse_export.py` | Finished run → one Langfuse trace (needs `~/.venvs/ilab-obs`) |
 | `study/run_phase1.sh`, `study/kfold_eval.py`, `study/analyze_phase1.py` | Phase 1 runs and their offline evaluation |
 | `study/scrub_secrets.py`, `hooks/pre-commit` | Secret redaction and the commit guard |
