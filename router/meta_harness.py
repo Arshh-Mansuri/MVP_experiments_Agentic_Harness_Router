@@ -12,6 +12,9 @@ usage (from the repo root; Harbor runs under its own Python 3.12):
 force_harness is the fallback attempt: the same harness again, with no routing call. The fallback itself is
 decided outside Harbor (study/run_final.sh), because Harbor's agent timeout cancels the whole agent and leaves no
 time to retry inside it.
+
+route_only=true stops after the decision: route.json is written and the chosen harness is neither installed nor run.
+Use it with `harbor run --install-only` to collect routing decisions without running the task (study/route_basic.sh).
 """
 import asyncio, datetime, json, os, sys
 
@@ -27,10 +30,11 @@ FORWARD = ("logger", "mcp_servers", "skills_dir", "extra_env", "load_trajectory"
 
 class MetaHarness(BaseAgent):
     def __init__(self, logs_dir, model_name=None, router="luna", force_harness=None, trigger=None, first_job=None,
-                 task=None, **kwargs):
+                 task=None, route_only=False, **kwargs):
         self._forward = {k: kwargs[k] for k in FORWARD if kwargs.get(k) is not None}
         super().__init__(logs_dir, model_name, **kwargs)
         self.router, self.force_harness = str(router), (str(force_harness) if force_harness else None)
+        self.route_only = str(route_only).lower() in ("1", "true", "yes")
         self.trigger, self.first_job, self.task = trigger, first_job, task
         self.harness = self.harness_version = self.inner = None
 
@@ -51,12 +55,16 @@ class MetaHarness(BaseAgent):
             json.dump({"routed_at": datetime.datetime.now().isoformat(timespec="seconds"), "task": task,
                        "router": self.router, "harness": h, "version": ver, **info}, f, indent=1, default=str)
         self.logger.info(f"meta-harness: {task} -> {h} {ver} ({info.get('match')}: {info.get('reason')})")
+        if self.route_only:
+            return
         self.inner = AgentFactory.create_agent_from_name(AgentName(h), logs_dir=self.logs_dir,
                                                          model_name=self.model_name, version=ver, **self._forward)
         self.inner.session_id, self.inner.context_id = self.session_id, self.context_id
         await self.inner.setup(environment)
 
     async def run(self, instruction, environment, context):
+        if self.inner is None:
+            return
         await self.inner.run(instruction=instruction, environment=environment, context=context)
 
     def populate_context_post_run(self, context):

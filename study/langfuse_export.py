@@ -30,7 +30,10 @@ Timing inside the agent comes from step boundaries: the logs record when each st
 call ended and its tool started, so a generation spans from the previous step to its own timestamp and its tool
 calls are placed at its end.
 
-usage: ~/.venvs/ilab-obs/bin/python study/langfuse_export.py jobs/<job> [--dry-run | --replace]
+Route-only jobs (study/route_basic.sh, --route-only): one route-task generation per trace (system prompt and task in,
+harness, rule and reason out), tags router:<r>, harness:<h>, rule:<n>, mode:route-only.
+
+usage: ~/.venvs/ilab-obs/bin/python study/langfuse_export.py jobs/<job> [--dry-run | --replace] [--route-only]
 Needs langfuse==4.17.0 (Python >= 3.10) and LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_BASE_URL in the env.
 """
 import argparse, base64, datetime as dt, glob, hashlib, json, os, re, sys
@@ -149,7 +152,7 @@ def atif_steps(path, run_start, run_end):
             reply["reasoning_content"] = s["reasoning_content"]
         out.append(node("decide-next-action", "generation", prev, ts, input=pending, output=reply,
                         model=luna(s.get("model_name")), usage=usage,
-                        cost={"total": m["cost_usd"]} if m.get("cost_usd") is not None else None,
+                        cost={"total": pr.list_cost(m.get("prompt_tokens") or 0, cached, m.get("completion_tokens") or 0)},
                         metadata={"step_id": s.get("step_id"), "llm_calls": s.get("llm_call_count", 1)}))
         results = ((s.get("observation") or {}).get("results")) or []
         by_id = {r.get("source_call_id"): r for r in results if r.get("source_call_id")}
@@ -316,11 +319,13 @@ def build(job_dir):
         steps = []
     steps = group_tools(steps)
     final = next((s["output"].get("content") for s in reversed(steps) if s["type"] == "generation"), None)
-    agent_cost = (r.get("agent_result") or {}).get("cost_usd")
+    ar = r.get("agent_result") or {}
+    agent_cost = pr.agent_cost(harness, ar.get("n_input_tokens"), ar.get("n_cache_tokens"), ar.get("n_output_tokens"),
+                               ar.get("cost_usd"))
 
     agent = node(harness, "agent", stage["agent_setup"][0] or run_start, run_end, input=instruction, output=final,
                  metadata={"harness_version": route.get("version"), "model": start.get("model"),
-                           "cost_usd": agent_cost, "agent_steps": sum(s["type"] == "generation" for s in steps),
+                           "cost_usd": agent_cost, "cost_reported_usd": ar.get("cost_usd"), "agent_steps": sum(s["type"] == "generation" for s in steps),
                            "timing": "step boundaries; tool calls placed at the end of their generation",
                            "log_console": log_tail([os.path.join(trial, "agent", f)
                                                     for f in ("terminus_2.pane", "mini-swe-agent.txt")])})
@@ -364,6 +369,37 @@ def build(job_dir):
                  {"name": "reward", "value": reward, "comment": f"{passed}/{len(tests)} tests passed"}
                  if reward is not None else None,
                  {"name": "tests_passed", "value": passed / len(tests)} if tests else None] if s]}
+    return trace, root
+
+
+def build_route_only(job_dir):
+    """A routing decision without a task run (study/route_basic.sh): one route-task generation, from route.json."""
+    job = os.path.basename(os.path.normpath(job_dir))
+    files = glob.glob(os.path.join(job_dir, "*__*", "agent", "route.json"))
+    if not files:
+        raise SystemExit(f"no agent/route.json under {job_dir}")
+    d = json.load(open(files[0]))
+    end = when(d["routed_at"])
+    begin = end - dt.timedelta(seconds=d.get("seconds") or 0)
+    meta = d.get("task_meta") or {}
+    system = open(os.path.join(ROOT, "router", "basic_system_prompt.txt")).read() \
+        if d.get("router") == "basic" else None
+    prompt = [{"role": "system", "content": system}] if system else []
+    prompt.append({"role": "user", "content": d.get("user_message") or d["task"]})
+    reply = {"harness": d.get("harness"), "rule": d.get("rule"), "reason": d.get("reason")}
+    root = node("route-task", "generation", begin, end, input=prompt, output=reply, model=luna(d.get("underlying_model")),
+                usage={"input": (d.get("tokens") or {}).get("in") or 0, "output": (d.get("tokens") or {}).get("out") or 0},
+                cost={"total": d.get("cost") or 0.0},
+                metadata={"system_prompt_sha256": d.get("system_prompt_sha256"), "decision_steps": d.get("trace"),
+                          "raw": d.get("raw"), "byok": d.get("byok")},
+                level=None if d.get("harness") else "ERROR")
+    trace = {"job": job, "name": "route-task", "session": d["task"],
+             "tags": [f"router:{d.get('router')}", f"harness:{d.get('harness')}", "mode:route-only"]
+                     + ([f"rule:{d['rule']}"] if d.get("rule") is not None else []),
+             "metadata": {"task": d["task"], "router": d.get("router"), "harness": d.get("harness"),
+                          "rule": d.get("rule"), "category": meta.get("category"), "difficulty": meta.get("difficulty"),
+                          "system_prompt_sha256": d.get("system_prompt_sha256")},
+             "scores": []}
     return trace, root
 
 
@@ -457,8 +493,9 @@ def main():
     ap.add_argument("job_dir")
     ap.add_argument("--dry-run", action="store_true", help="print the trace tree instead of sending it")
     ap.add_argument("--replace", action="store_true", help="delete the trace already sent for this job, send it again")
+    ap.add_argument("--route-only", action="store_true", help="a routing decision with no task run (route_basic.sh)")
     a = ap.parse_args()
-    trace, root = build(a.job_dir)
+    trace, root = (build_route_only if a.route_only else build)(a.job_dir)
     prev = last_sent(trace["job"])
     revision = prev["revision"] + 1 if prev else 0
     trace["id"] = hashlib.sha256(f"{trace['job']}#{revision}".encode() if revision else trace["job"].encode()).hexdigest()[:32]

@@ -3,7 +3,8 @@ dry run (study/run_live_router.sh). Standard library only, Python 3.9+.
 
 route(task, router, force) -> (harness, version, info)
   router 'luna' (default): table_router.pick(); 'jev': table_router.decide(). Either answers a Table A task from the
-  frozen success table with no model call.
+  frozen success table with no model call. 'basic': basic_router.route(), one Luna call with the rules-only prompt
+  (router/basic_system_prompt.txt), no table.
   force: a harness name for the fallback attempt (same-harness retry); no routing call is made.
 """
 import os, sys
@@ -26,8 +27,11 @@ def route(task, router="luna", force=None, trigger=None, first_job=None):
         h, info = table_router.pick(task, pr.task_text(task), "luna")
     elif router == "jev":
         h, info = table_router.decide(task, pr.task_text(task))
+    elif router == "basic":
+        import basic_router
+        h, info = basic_router.route(task)
     else:
-        raise ValueError(f"unknown router '{router}': use luna or jev")
+        raise ValueError(f"unknown router '{router}': use luna, jev or basic")
     if h not in VERSIONS:
         raise RuntimeError(f"router '{router}' returned '{h}', which is not one of our three harnesses")
     return h, VERSIONS[h], info

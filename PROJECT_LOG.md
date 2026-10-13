@@ -45,6 +45,85 @@ never past benchmark results.
 
 ---
 
+## 3m. 11 Oct 2026: basic router uses the 89-task workbook only
+
+Decision: the basic router uses only the 89-task benchmark analysis, `Qwen_89_Task_Comparison_2026-09-20.xlsx`
+(identical to the copy in `archive/`). The 45 tasks Luna ran in Phase 1 are not used.
+- `router/basic_analysis.py` recomputes every number in the prompt from the workbook's Trial details sheet, plus each
+  task's own `task.toml` and instruction. The workbook's status column is used as the pass mark, as on its Results
+  sheet: pi passes 16 tasks, and one pi trial with passed=1 but a non-PASS status is the "pi scoring conflict" the
+  workbook keeps.
+- Two prompt figures had come from a different cached version of two tasks; they now match the script.
+  - Time-limit groups changed from 51/22/16 tasks to 49/22/18.
+  - Server tasks changed from 15 to 14.
+- The prompt hash changed from `e5985eb35517fdf4` to `6d30efcfcb2c654c`.
+- `basic_router.py` no longer imports `table_router`; the model call is `profile_router.call(..., system=)`.
+- The 89 decisions made with the old prompt are kept as `study/basic_routes_prompt-e5985eb3.csv`, and all 89 tasks
+  were routed again into `study/basic_routes.csv`.
+- Rerun, 11 Oct, about 02:05 to 02:56: 89 of 89 decided, all with prompt `6d30efcf`, $0.021 in total (all BYOK),
+  89 Langfuse traces.
+  - Picks: mini-swe-agent 58, terminus-2 18, pi 13.
+  - Rules used: rule 1 5 times, rule 2 7, rule 3 15, rule 4 11, rule 5 51.
+- 6 of 89 picks differ from the old prompt, all on borderline tasks (the prompt changes were only small number fixes):
+  - gpt2-codegolf: mini-swe-agent to terminus-2
+  - nginx-request-logging: mini-swe-agent to terminus-2
+  - code-from-image: mini-swe-agent to pi
+  - mteb-retrieve: terminus-2 to mini-swe-agent
+  - db-wal-recovery: pi to mini-swe-agent
+  - model-extraction-relu-logits: pi to mini-swe-agent
+  The router model is not perfectly repeatable on these tasks even at temperature 0.
+- In-sample check against the workbook (the rules come from it, so this is optimistic): 26 of 89 passes, against 28
+  for always mini-swe-agent and 35 for the oracle. The same three picks land on a harness that crashed in the
+  workbook: path-tracing-reverse, train-fasttext, headless-terminal.
+
+## 3l. 11 Oct 2026: basic router, routing decisions only
+
+A basic version of the router, to see which harness it picks per task without running the benchmark.
+- Knowledge: only the 89-task benchmark analysis (Qwen3-Coder workbook), as aggregate rules in a hand-written
+  system prompt, `router/basic_system_prompt.txt`. It has no per-task results and no lookup table. Findings it encodes:
+  - mini-swe-agent passed the most tasks overall (28/89) and the most builds and debugging tasks.
+  - terminus-2 was the only harness that installed in the QEMU/VM containers, and never crashed on server tasks.
+  - pi scored 0 on data-science and model-training tasks, but tied on security tasks at the lowest cost.
+  - Long, hard tasks are rarely solved by any harness.
+  - The prompt turns these into five ordered rules; the router replies with a rule, a reason and a harness.
+- `router/basic_router.py`: one Luna call. The user message holds the task's category, difficulty, tags and agent time
+  limit from `task.toml`, plus its instruction.
+- The meta-harness Harbor agent gained `router=basic` and `route_only=true`. `study/route_basic.sh` runs it under
+  `harbor run --install-only`: the container starts, the agent routes in setup and writes `route.json`, and nothing
+  is installed, run or tested.
+- Output: `study/basic_routes.csv` and one `route-task` Langfuse trace per decision (2 units).
+- First decisions: fix-git goes to mini-swe-agent (rule 5), qemu-startup to terminus-2 (rule 1). Each costs about
+  $0.0001–0.0005 and 17–141 s, mostly the container start. An accidental second copy of the script, running at the
+  same time, failed to pull the qemu image; its rows were dropped from the CSV.
+- Full run, 11 Oct, 00:56 to 01:56: all 89 tasks routed with no failures, $0.021 in total (all BYOK), 89 Langfuse
+  traces.
+  - Picks: mini-swe-agent 58, terminus-2 17, pi 14.
+  - Rules used: rule 1 (VM or interactive) 5 times, rule 2 (server) 6, rule 3 (ML or data) 16, rule 4 (security or
+    maths) 13, rule 5 (default) 49.
+- In-sample check against the same Qwen results the rules came from (so optimistic, not an evaluation): the picks
+  pass 28 of 89, the same as always mini-swe-agent; always terminus-2 passes 22, always pi 16, the oracle 35.
+  Three picks land on a harness that crashed in the Qwen run: path-tracing-reverse, train-fasttext,
+  headless-terminal.
+
+## 3k. 9 Oct 2026: BYOK (Luna billed to our OpenAI key)
+
+The final run will be on this laptop, with Luna billed to our own OpenAI key through OpenRouter (BYOK).
+- With BYOK, OpenRouter's `usage.cost` is only its fee, and litellm (terminus-2, mini-swe-agent) records exactly that.
+  The agent cost is now rebuilt from token counts at Luna's list price: new prompt tokens at the cache-write rate
+  $0.25/M, cached $0.02/M, output $1.20/M. On Phase 1 that matches the reported cost to a median 0.4% for both
+  harnesses. pi prices its own tokens (its cost already counts cache writes, which Harbor leaves out of pi's token
+  totals), so its figure is kept. Rows keep the raw figure as `cost_reported_usd`; Langfuse step costs use the same
+  prices. The router's own cost adds `upstream_inference_cost` when `is_byok`.
+- `study/run_final.sh` refuses to start unless a one-token Luna call reports `is_byok` (`REQUIRE_BYOK=0` to skip).
+- Check runs `byok-check-{terminus-2,pi}-20261009-203547` (fix-git, both reward 1.0) and a direct call showed
+  `is_byok: false`: the OpenAI key was not yet applied on OpenRouter at that time, so they were billed to credit.
+  OpenRouter's log showed the stored key failing with 401 and falling back to shared capacity. After a full key
+  from the OpenAI console was saved, a check call returned `is_byok: true` (OpenRouter fee $0).
+- BYOK smoke run `live-luna-fix-git-20261009-210015`: terminus-2, reward 1.0, 3.3 min, recorded $0.0189 (Harbor
+  reported $0.0188). Harbor's litellm falls back to its own price table when OpenRouter reports a cost of 0, so
+  its figure stays near list price while the BYOK fee is free; the token-based cost covers the case where the
+  fee is charged.
+
 ## 3j. 9 Oct 2026: the meta-harness is a Harbor agent
 
 The brief asks for the router to be built as a meta-harness that Harbor runs as an agent. Until now the routing

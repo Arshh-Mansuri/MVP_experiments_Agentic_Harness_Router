@@ -76,9 +76,15 @@ LANGFUSE_SECRET_KEY=sk-lf-...                   # optional
 LANGFUSE_BASE_URL=https://jp.cloud.langfuse.com
 ```
 
-If you use your own OpenAI credits through OpenRouter (BYOK, under Settings, Integrations on openrouter.ai):
-- turn on "Never use shared capacity", so a failing OpenAI key does not silently fall back to OpenRouter credit;
-- after the smoke test below, check that the cost recorded in `study/live_runs.jsonl` is not near zero.
+The final run bills Luna to our own OpenAI key through OpenRouter (BYOK, under Settings, Integrations on
+openrouter.ai):
+- turn on "Always use this key" / "Never use shared capacity", so a failing OpenAI key does not silently fall back
+  to OpenRouter credit;
+- `study/run_final.sh` makes one tiny Luna call first and refuses to start unless OpenRouter reports `is_byok`
+  (`REQUIRE_BYOK=0` runs on OpenRouter credit instead); OpenRouter credit still pays its small BYOK fee;
+- with BYOK, OpenRouter reports only its fee as the cost, so terminus-2 and mini-swe-agent costs are rebuilt from
+  token counts at Luna's list price (`profile_router.agent_cost`, within about 0.4% of the reported cost on Phase 1);
+  pi prices its own tokens. `study/live_runs.jsonl` keeps the reported figure as `cost_reported_usd`.
 
 ### 2. Check the machine (free)
 
@@ -102,6 +108,27 @@ The router runs inside Harbor as a custom agent, the **meta-harness** (`router/m
 `PYTHONPATH=router harbor run ... --agent meta_harness:MetaHarness --ak router=luna`. The agent picks the harness
 during setup, saves the decision as `agent/route.json` in the trial, and hands the task to that harness.
 `result.json` lists the agent as `meta-harness` with version `<harness>@<version>`.
+
+### Basic router: routing decisions only (no task runs)
+
+A simpler router: no lookup table, only a hand-written system prompt (`router/basic_system_prompt.txt`) whose rules
+come from the 89-task benchmark analysis, `Qwen_89_Task_Comparison_2026-09-20.xlsx` (aggregate pass rates by harness,
+category, difficulty and kind of task; no per-task results). Luna's own 45-task runs are not used.
+`python3 router/basic_analysis.py` recomputes every number in the prompt from the workbook. It runs as the same Harbor agent with `router=basic` and `route_only=true`, under
+`harbor run --install-only`: Harbor starts the task's container, the agent makes one Luna call and saves its
+decision, and nothing is installed, run or tested.
+
+```bash
+study/route_basic.sh fix-git qemu-startup          # chosen tasks
+study/route_basic.sh --all                         # all 89 (study/final_tasks_all.txt)
+DRY_RUN=1 study/route_basic.sh fix-git             # print the Harbor command only
+python3 router/basic_router.py fix-git             # the same decision without Harbor or Docker
+```
+
+About $0.0001–0.0005 per task, plus the container start (seconds, or a few minutes the first time a large image
+is pulled). Run one copy at a time: two copies pulling the same image make Docker fail. Each decision is appended to
+`study/basic_routes.csv` (task, harness, rule, reason, category, difficulty, tokens, cost, job, Langfuse link) and
+sent to Langfuse as one `route-task` trace tagged `router:basic`, `harness:<h>`, `rule:<n>`, `mode:route-only`.
 
 ### 4. The final run
 

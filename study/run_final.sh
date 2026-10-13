@@ -16,6 +16,8 @@
 #
 #   PARALLEL=3         tasks at once (Phase 1 also ran 3 at once)
 #   MIN_CREDIT=0.5     stop launching runs when the OpenRouter key has less than this many dollars left (0 = off)
+#   REQUIRE_BYOK=1     refuse to start unless OpenRouter serves Luna through our own OpenAI key (one tiny Luna call,
+#                      about $0.00001); 0 = allow OpenRouter credit
 #   PRUNE_BELOW_GB=20  remove unused Docker images when free disk drops below this (task images pile up)
 #   MIN_FREE_GB=6      stop launching runs when free disk is still below this after pruning
 #   DRY_RUN=1          route and print the Harbor commands only (tasks not in the table still cost one Luna call)
@@ -29,7 +31,7 @@ cd "$(dirname "$0")/.."
 
 LIST="${1:-study/final_tasks_all.txt}"
 export BATCH="${2:-final}"
-export PARALLEL="${PARALLEL:-3}" MIN_CREDIT="${MIN_CREDIT:-0.5}"
+export PARALLEL="${PARALLEL:-3}" MIN_CREDIT="${MIN_CREDIT:-0.5}" REQUIRE_BYOK="${REQUIRE_BYOK:-1}"
 export PRUNE_BELOW_GB="${PRUNE_BELOW_GB:-20}" MIN_FREE_GB="${MIN_FREE_GB:-6}" DRY_RUN="${DRY_RUN:-0}"
 export CONSOLE="study/logs/$BATCH-console"
 [ -f "$LIST" ] || { echo "no task list at $LIST"; exit 1; }
@@ -37,6 +39,23 @@ export CONSOLE="study/logs/$BATCH-console"
 set -a; . ./.env; set +a
 docker info >/dev/null 2>&1 || { echo "Docker is not running"; exit 1; }
 [ -e study/logs/STOP ] && { echo "study/logs/STOP exists: delete it to start"; exit 1; }
+if [ "$REQUIRE_BYOK" = 1 ] && [ "$DRY_RUN" != 1 ]; then
+  BYOK=$(python3 - <<'PY'
+import json, os, urllib.request
+req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", data=json.dumps({
+    "model": "openai/gpt-5.6-luna", "messages": [{"role": "user", "content": "Reply with: ok"}],
+    "max_tokens": 16, "usage": {"include": True}}).encode(),
+    headers={"Authorization": "Bearer " + os.environ["OPENROUTER_API_KEY"], "Content-Type": "application/json"})
+try:
+    print("yes" if (json.load(urllib.request.urlopen(req, timeout=60)).get("usage") or {}).get("is_byok") else "no")
+except Exception as e:
+    print(f"error {type(e).__name__}")
+PY
+)
+  [ "$BYOK" = yes ] || { echo "BYOK check: '$BYOK'. OpenRouter is not serving Luna through the OpenAI key (OpenRouter"
+    echo "settings > Integrations: add the OpenAI key, enable 'Always use this key'). REQUIRE_BYOK=0 to run on credit."; exit 1; }
+  echo "BYOK check: Luna is billed to the OpenAI key"
+fi
 mkdir -p "$CONSOLE"
 
 state() {  # prints: run | fallback <harness> <first-job> <trigger> | done <reward or none> <first|fallback>

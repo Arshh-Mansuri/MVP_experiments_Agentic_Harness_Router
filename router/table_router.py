@@ -291,8 +291,8 @@ def pick(name, text, router="luna", key=None, exact=True, drop=()):
     info = {"underlying_model": r.get("model"), "table_sha256": digest, "system_prompt_sha256": prompt_sha,
             "match": d.get("match"), "reason": d.get("reason"), "raw": txt[:500],
             "seconds": round(time.time() - start, 2),
-            "tokens": {"in": u.get("prompt_tokens"), "out": u.get("completion_tokens")}, "cost": u.get("cost") or 0.0,
-            "trace": tr}
+            "tokens": {"in": u.get("prompt_tokens"), "out": u.get("completion_tokens")}, "cost": pr.usage_cost(u),
+            "byok": bool(u.get("is_byok")), "trace": tr}
     tr.step("router model replied", harness=h, match=d.get("match"), reason=d.get("reason"),
             seconds=info["seconds"], tokens=info["tokens"], cost=info["cost"], underlying_model=r.get("model"))
     if h not in pr.HARNESSES:

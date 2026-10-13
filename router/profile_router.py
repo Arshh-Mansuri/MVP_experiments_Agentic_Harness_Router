@@ -56,8 +56,9 @@ def task_text(task):
     raise FileNotFoundError(f"instruction.md not found for {task}")
 
 
-def call(prompt, key, model):
-    body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0,
+def call(prompt, key, model, system=None):
+    messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
+    body = json.dumps({"model": model, "messages": messages, "temperature": 0,
                        "max_tokens": MAX_TOKENS, "usage": {"include": True}}).encode()
     req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", body,
                                  {"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
@@ -80,6 +81,31 @@ def parse_json(txt):
         return {}
 
 
+# GPT-5.6-Luna list prices, $ per million tokens. New prompt tokens are priced as cache writes: on Phase 1 this
+# reproduces the cost OpenRouter reported for terminus-2 and mini-swe-agent to within about 0.4% (median). The
+# >272k-token prompt tier is ignored.
+LUNA_PRICE = {"new_input": 0.25, "cached": 0.02, "output": 1.20}
+
+
+def list_cost(n_in, n_cached, n_out):
+    p = LUNA_PRICE
+    return round(((n_in - n_cached) * p["new_input"] + n_cached * p["cached"] + n_out * p["output"]) / 1e6, 8)
+
+
+def agent_cost(harness, n_in, n_cached, n_out, reported):
+    """Agent cost at list price. With BYOK, OpenRouter (and so litellm in terminus-2 and mini-swe-agent) reports
+    only its fee; pi prices tokens itself, so its own figure stands."""
+    if harness == "pi" or n_in is None or n_out is None:
+        return reported
+    return list_cost(n_in, n_cached or 0, n_out)
+
+
+def usage_cost(u):
+    """Total cost of one call. With BYOK, OpenRouter's 'cost' is only its fee; the provider's charge is separate."""
+    up = (u.get("cost_details") or {}).get("upstream_inference_cost") if u.get("is_byok") else None
+    return (u.get("cost") or 0.0) + (up or 0.0)
+
+
 def pick(text, router="luna", key=None):
     """Returns (harness or None, info). info records the underlying model that answered, tokens and cost."""
     profiles, digest = load_profiles()
@@ -92,5 +118,6 @@ def pick(text, router="luna", key=None):
     u = r.get("usage") or {}
     info = {"router": router, "underlying_model": r.get("model"), "profiles_sha256": digest,
             "reason": d.get("reason"), "raw": txt[:500], "seconds": round(time.time() - t, 2),
-            "tokens": {"in": u.get("prompt_tokens"), "out": u.get("completion_tokens")}, "cost": u.get("cost") or 0.0}
+            "tokens": {"in": u.get("prompt_tokens"), "out": u.get("completion_tokens")}, "cost": usage_cost(u),
+            "byok": bool(u.get("is_byok"))}
     return (h if h in HARNESSES else None), info

@@ -123,6 +123,9 @@ files = glob.glob(f"{sys.argv[1]}/*__*/result.json")
 if not files:
     print(json.dumps({"reward": None, "error": "no result.json"})); sys.exit()
 r = json.load(open(files[0])); ar = r.get("agent_result") or {}; exc = r.get("exception_info") or {}
+sys.path.insert(0, "router")
+import profile_router as pr
+harness = ((r.get("agent_info") or {}).get("version") or "").split("@")[0]
 steps = None
 for p in glob.glob(f"{files[0].rsplit('/', 1)[0]}/agent/trajectory*.json"):
     try:
@@ -134,7 +137,10 @@ print(json.dumps({
     "exception": exc.get("exception_type"),
     "exception_message": ((exc.get("exception_message") or "").strip().splitlines() or [None])[0],
     "agent_steps": steps, "input_tokens": ar.get("n_input_tokens"), "cached_tokens": ar.get("n_cache_tokens"),
-    "output_tokens": ar.get("n_output_tokens"), "cost_usd": ar.get("cost_usd"),
+    "output_tokens": ar.get("n_output_tokens"),
+    "cost_usd": pr.agent_cost(harness, ar.get("n_input_tokens"), ar.get("n_cache_tokens"), ar.get("n_output_tokens"),
+                              ar.get("cost_usd")),
+    "cost_reported_usd": ar.get("cost_usd"),
     "minutes": {"env_setup": mins(r.get("environment_setup")), "agent_setup": mins(r.get("agent_setup")),
                 "agent_run": mins(r.get("agent_execution")), "verifier": mins(r.get("verifier")), "total": mins(r)},
     "trial_dir": files[0].rsplit("/", 1)[0]}))
@@ -149,6 +155,7 @@ row = {"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="se
        "task": sys.argv[3], "router": sys.argv[4], "harness": route["harness"], "version": route["version"],
        "match": route["match"], "reason": route["reason"], "job": sys.argv[5],
        "reward": res.get("reward"), "exception": res.get("exception"), "cost_usd": res.get("cost_usd"),
+       "cost_reported_usd": res.get("cost_reported_usd"),
        "route_cost": route.get("route_cost"), "input_tokens": res.get("input_tokens"),
        "cached_tokens": res.get("cached_tokens"), "output_tokens": res.get("output_tokens"),
        "minutes": (res.get("minutes") or {}).get("total"), "trace": sys.argv[6]}

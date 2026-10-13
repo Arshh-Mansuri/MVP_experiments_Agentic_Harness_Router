@@ -38,6 +38,7 @@ from the repo root. Benchmark runs go through the `harbor` CLI and Docker.
 | Path | Contents |
 |---|---|
 | `router/meta_harness.py`, `router/meta_route.py` | The meta-harness as a Harbor agent (`--agent meta_harness:MetaHarness`, needs `PYTHONPATH=router`); runs in Harbor's Python 3.12, routes in `setup()`, delegates to the chosen harness |
+| `router/basic_router.py`, `router/basic_system_prompt.txt`, `router/basic_analysis.py`, `study/route_basic.sh` | Basic router: rules-only prompt from the 89-task workbook only (`Qwen_89_Task_Comparison_2026-09-20.xlsx`; never the 45 Luna tasks), one Luna call, no table; route-only Harbor runs (`--install-only`) to `study/basic_routes.csv` + Langfuse |
 | `router/table_router.py` | The live router: `pick()` (Luna), `decide()` (Jev), `lookup()` (no model, used by offline tools), `Trace` |
 | `router/profile_router.py` | Harness list, `task_text()`, profile loading, OpenRouter chat call |
 | `router/build_success_table.py` | Builds and freezes the success table + routing prompt |

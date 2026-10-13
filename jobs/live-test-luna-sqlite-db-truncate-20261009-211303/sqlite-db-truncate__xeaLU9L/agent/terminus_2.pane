@@ -1,0 +1,168 @@
+[?2004hroot@55a05ff685af:/app# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@55a05ff685af:/app# clear
+[?2004l[H[J[3J[?2004hroot@55a05ff685af:/app# ls -l /app/trunc.db && file /app/trunc.db && sqlite3 /app/trunc.db '.tables' && sqlite3 /app/trunc.db '.schema'
+[?2004l-rw-r--r-- 1 root root 4096 Aug 11  2025 /app/trunc.db
+bash: file: command not found
+[?2004hroot@55a05ff685af:/app# sqlite3 /app/trunc.db 'PRAGMA integrity_check;'
+[?2004lbash: sqlite3: command not found
+[?2004hroot@55a05ff685af:/app# python3 - <<'PY'
+[?2004l[?2004h> import sqlite3, os
+[?2004l[?2004h> p='/app/trunc.db'
+[?2004l[?2004h> print('size', os.path.getsize(p))
+[?2004l[?2004h> try:
+[?2004l[?2004h>     con=sqlite3.connect(p)
+[?2004l[?2004h>     print('tables', con.execute("select name,sql from sqlite_master").fetchall())
+[?2004l[?2004h>     for t, in con.execute("select name from sqlite_master where type='table'"):
+[?2004l[?2004h>         print(t, con.execute('select * from "'+t.replace('"','""')+'"').fetchall())
+[?2004l[?2004h> except Exception as e:
+[?2004l[?2004h>     print(type(e).__name__, e)
+[?2004l[?2004h> PY
+[?2004lsize 4096
+DatabaseError file is not a database
+[?2004hroot@55a05ff685af:/app# python3 - <<'PY'
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> b=Path('/app/trunc.db').read_bytes()
+[?2004l[?2004h> print('header', b[:100])
+[?2004l[?2004h> print('hex', b[:128].hex())
+[?2004l[?2004h> if b[:16]==b'SQLite format 3\x00':
+[?2004l[?2004h>  print('page_size', int.from_bytes(b[16:18],'big'), 'reserved',b[20], 'pages',int.from_bytes(b[28:32],'big'))
+[?2004l[?2004h>  print('page1 type/firstfree/cells/content', b[100], int.from_bytes(b[101:103],'big'), int.from_bytes(b[103:105],'big'), int.from_bytes(b[105:107],'big'))
+[?2004l[?2004h>  print('cell pointers',[int.from_bytes(b[i:i+2],'big') for i in range(108, min(108+2*int.from_bytes(b[103:105],'big'),len(b)),2)])
+[?2004l[?2004h> PY
+[?2004lheader b'\r\x00\x00\x00\n\x0fI\x00\x0f\xf0\x0f\xdf\x0f\xce\x0f\xbd\x0f\xac\x0f\x9b\x0f\x8a\x0fy\x0fa\x0fI\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+hex 0d0000000a0f49000ff00fdf0fce0fbd0fac0f9b0f8a0f790f610f4900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+[?2004hroot@55a05ff685af:/app# python3 - <<'PY'
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> import json, struct
+[?2004l[?2004h> p=Path('/app/trunc.db'); b=p.read_bytes(); n=len(b)
+[?2004l[?2004h> 
+[?2004l[?2004h> def varint(buf, pos):
+[?2004l[?2004h>     v=0
+[?2004l[?2004h>     for i in range(9):
+[?2004l[?2004h>         x=buf[pos+i]
+[?2004l[?2004h>         if i==8: return (v<<8)|x, pos+9
+[?2004l[?2004h>         v=(v<<7)|(x&127)
+[?2004l[?2004h>         if not x&128: return v, pos+i+1
+[?2004l[?2004h>     raise ValueError('bad varint')
+[?2004l[?2004h> 
+[?2004l[?2004h> def serial(buf, pos, typ):
+[?2004l[?2004h>     if typ==0: return None,pos
+[?2004l[?2004h>     if typ==1: return int.from_bytes(buf[pos:pos+1],'big',signed=True),pos+1
+[?2004l[?2004h>     if typ==2: return int.from_bytes(buf[pos:pos+2],'big',signed=True),pos+2
+[?2004l[?2004h>     if typ==3: return int.from_bytes(buf[pos:pos+3],'big',signed=True),pos+3
+[?2004l[?2004h>     if typ==4: return int.from_bytes(buf[pos:pos+4],'big',signed=True),pos+4
+[?2004l[?2004h>     if typ==5: return int.from_bytes(buf[pos:pos+6],'big',signed=True),pos+6
+[?2004l[?2004h>     if typ==6: return int.from_bytes(buf[pos:pos+8],'big',signed=True),pos+8
+[?2004l[?2004h>     if typ==7: return struct.unpack('>d',buf[pos:pos+8])[0],pos+8
+[?2004l[?2004h>     if typ==8: return 0,pos
+[?2004l[?2004h>     if typ==9: return 1,pos
+[?2004l[?2004h>     if typ in (10,11): return None,pos
+[?2004l[?2004h>     if typ>=12:
+[?2004l[?2004h>         ln=(typ-12)//2
+[?2004l[?2004h>         raw=buf[pos:pos+ln]
+[?2004l[?2004h>         return (raw.decode('utf-8','replace') if typ%2 else raw),pos+ln
+[?2004l[?2004h>     raise ValueError(typ)
+[?2004l[?2004h> 
+[?2004l[?2004h> nc=int.from_bytes(b[3:5],'big')
+[?2004l[?2004h> ptrs=[int.from_bytes(b[8+2*i:10+2*i],'big') for i in range(nc)]
+[?2004l[?2004h> print('page type',hex(b[0]),'cells',nc,'pointers',ptrs)
+[?2004l[?2004h> rows=[]
+[?2004l[?2004h> for idx,off in enumerate(ptrs):
+[?2004l[?2004h>     start=off
+[?2004l[?2004h>     plen,q=varint(b,off); rowid,q=varint(b,q)
+[?2004l[?2004h>     hend,q2=varint(b,q); hstart=q; hendpos=q+hend
+[?2004l[?2004h>     types=[]; x=hendpos
+[?2004l[?2004h>     while x < hendpos: pass
+[?2004l[?2004h>     # header length includes its own varint; serial types begin at q2
+[?2004l[?2004h>     x=q2
+[?2004l[?2004h>     while x < q+hend:
+[?2004l[?2004h>         t,x=varint(b,x); types.append(t)
+[?2004l[?2004h>     data=x; vals=[]
+[?2004l[?2004h>     for t in types:
+[?2004l[?2004h>         v,data=serial(b,data,t); vals.append(v)
+[?2004l[?2004h>     print(idx,'offset',off,'payload',plen,'rowid',rowid,'types',types,'values',vals)
+[?2004l[?2004h>     rows.append(vals)
+[?2004l[?2004h> 
+[?2004l[?2004h> out=[]
+[?2004l[?2004h> for vals in rows:
+[?2004l[?2004h>     if len(vals)>=2:
+[?2004l[?2004h>         # expected schema is word text and value integer; tolerate reversed order
+[?2004l[?2004h>         if isinstance(vals[0],str) and isinstance(vals[1],int): word,value=vals[0],vals[1]
+[?2004l[?2004h>         elif isinstance(vals[1],str) and isinstance(vals[0],int): word,value=vals[1],vals[0]
+[?2004l[?2004h>         else: continue
+[?2004l[?2004h>         out.append({'word':word,'value':value})
+[?2004l[?2004h> Path('/app/recover.json').write_text(json.dumps(out,separators=(',',':'))+'\n')
+[?2004l[?2004h> print('recovered',len(out),'rows')
+[?2004l[?2004h> print(Path('/app/recover.json').read_text(),end='')
+[?2004l[?2004h> PY
+[?2004lpage type 0xd cells 10 pointers [4080, 4063, 4046, 4029, 4012, 3995, 3978, 3961, 3937, 3913]
+0 offset 4080 payload 14 rowid 1 types [0, 33, 9] values [None, 'testword00', 1]
+1 offset 4063 payload 15 rowid 2 types [0, 33, 1] values [None, 'testword01', 2]
+2 offset 4046 payload 15 rowid 3 types [0, 33, 1] values [None, 'testword02', 10]
+3 offset 4029 payload 15 rowid 4 types [0, 33, 1] values [None, 'testword03', 25]
+4 offset 4012 payload 15 rowid 5 types [0, 33, 1] values [None, 'testword04', 42]
+5 offset 3995 payload 15 rowid 6 types [0, 33, 1] values [None, 'testword05', 50]
+6 offset 3978 payload 15 rowid 7 types [0, 33, 1] values [None, 'testword06', 75]
+7 offset 3961 payload 15 rowid 8 types [0, 33, 1] values [None, 'testword07', 99]
+8 offset 3937 payload 22 rowid 9 types [0, 33, 7] values [None, 'testword08', 99.99]
+9 offset 3913 payload 22 rowid 10 types [0, 33, 7] values [None, 'testword09', 0.5]
+recovered 0 rows
+[]
+[?2004hroot@55a05ff685af:/app# python3 - <<'PY'
+[?2004l[?2004h> import json
+[?2004l[?2004h> p='/app/recover.json'
+[?2004l[?2004h> x=json.load(open(p))
+[?2004l[?2004h> assert isinstance(x,list)
+[?2004l[?2004h> assert all(isinstance(r,dict) and set(r)=={'word','value'} and isinstance(r['word'],str) and isinstance(r['value'],int) for r in x)
+[?2004l[?2004h> print('validated',len(x),'records')
+[?2004l[?2004h> PY
+[?2004lvalidated 0 records
+[?2004hroot@55a05ff685af:/app# python3 - <<'PY'
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> import json, struct
+[?2004l[?2004h> b=Path('/app/trunc.db').read_bytes()
+[?2004l[?2004h> def varint(p):
+[?2004l[?2004h>  v=0
+[?2004l[?2004h>  for i in range(9):
+[?2004l[?2004h>   x=b[p+i]
+[?2004l[?2004h>   if i==8:return (v<<8)|x,p+9
+[?2004l[?2004h>   v=(v<<7)|(x&127)
+[?2004l[?2004h>   if not x&128:return v,p+i+1
+[?2004l[?2004h> def sval(p,t):
+[?2004l[?2004h>  if t==0:return None,p
+[?2004l[?2004h>  if t==1:return int.from_bytes(b[p:p+1],'big',signed=True),p+1
+[?2004l[?2004h>  if t==2:return int.from_bytes(b[p:p+2],'big',signed=True),p+2
+[?2004l[?2004h>  if t==3:return int.from_bytes(b[p:p+3],'big',signed=True),p+3
+[?2004l[?2004h>  if t==4:return int.from_bytes(b[p:p+4],'big',signed=True),p+4
+[?2004l[?2004h>  if t==5:return int.from_bytes(b[p:p+6],'big',signed=True),p+6
+[?2004l[?2004h>  if t==6:return int.from_bytes(b[p:p+8],'big',signed=True),p+8
+[?2004l[?2004h>  if t==7:return struct.unpack('>d',b[p:p+8])[0],p+8
+[?2004l[?2004h>  if t==8:return 0,p
+[?2004l[?2004h>  if t==9:return 1,p
+[?2004l[?2004h>  if t>=12:
+[?2004l[?2004h>   n=(t-12)//2; z=b[p:p+n]
+[?2004l[?2004h>   return (z.decode('utf8','replace') if t%2 else z),p+n
+[?2004l[?2004h> rows=[]
+[?2004l[?2004h> n=int.from_bytes(b[3:5],'big')
+[?2004l[?2004h> for i in range(n):
+[?2004l[?2004h>  o=int.from_bytes(b[8+2*i:10+2*i],'big'); plen,o=varint(o); rid,o=varint(o); h,o2=varint(o); x=o2; ts=[]
+[?2004l[?2004h>  while x<o+h: t,x=varint(x); ts.append(t)
+[?2004l[?2004h>  vals=[]; d=x
+[?2004l[?2004h>  for t in ts: v,d=sval(d,t); vals.append(v)
+[?2004l[?2004h>  word=next(v for v in vals if isinstance(v,str)); value=next(v for v in vals if isinstance(v,(int,float)) and not isinstance(v,bool))
+[?2004l[?2004h>  rows.append((rid,{'word':word,'value':value}))
+[?2004l[?2004h> rows.sort()
+[?2004l[?2004h> Path('/app/recover.json').write_text(json.dumps([r for _,r in rows],separators=(',',':'))+'\n')
+[?2004l[?2004h> print(Path('/app/recover.json').read_text(),end='')
+[?2004l[?2004h> PY
+[?2004l[{"word":"testword00","value":1},{"word":"testword01","value":2},{"word":"testword02","value":10},{"word":"testword03","value":25},{"word":"testword04","value":42},{"word":"testword05","value":50},{"word":"testword06","value":75},{"word":"testword07","value":99},{"word":"testword08","value":99.99},{"word":"testword09","value":0.5}]
+[?2004hroot@55a05ff685af:/app# python3 - <<'PY'
+[?2004l[?2004h> import json
+[?2004l[?2004h> x=json.load(open('/app/recover.json'))
+[?2004l[?2004h> assert len(x)==10 and all(set(r)=={'word','value'} for r in x)
+[?2004l[?2004h> print('validated',len(x),'rows')
+[?2004l[?2004h> PY
+[?2004lvalidated 10 rows
+[?2004hroot@55a05ff685af:/app# 
